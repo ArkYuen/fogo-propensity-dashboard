@@ -42,17 +42,20 @@ const audienceData = [
   { name: "Lookalike seed", customers: 20267, accent: true },
 ];
 
-const decileData = [
-  { decile: "D1", score: 0.94, customers: 20000 },
-  { decile: "D2", score: 0.86, customers: 20000 },
-  { decile: "D3", score: 0.78, customers: 20000 },
-  { decile: "D4", score: 0.69, customers: 20000 },
-  { decile: "D5", score: 0.61, customers: 20000 },
-  { decile: "D6", score: 0.52, customers: 20000 },
-  { decile: "D7", score: 0.44, customers: 20000 },
-  { decile: "D8", score: 0.35, customers: 20000 },
-  { decile: "D9", score: 0.27, customers: 20000 },
-  { decile: "D10", score: 0.18, customers: 20000 },
+// Model validation: predicted probability vs. observed conversion rate
+// per propensity decile (D1 = highest). Mocked but realistic — actual
+// roughly tracks predicted with mild over- and under-shoot.
+const validationData = [
+  { decile: "D1", predicted: 0.185, actual: 0.179 },
+  { decile: "D2", predicted: 0.158, actual: 0.151 },
+  { decile: "D3", predicted: 0.134, actual: 0.127 },
+  { decile: "D4", predicted: 0.112, actual: 0.109 },
+  { decile: "D5", predicted: 0.091, actual: 0.086 },
+  { decile: "D6", predicted: 0.074, actual: 0.071 },
+  { decile: "D7", predicted: 0.058, actual: 0.052 },
+  { decile: "D8", predicted: 0.042, actual: 0.046 },
+  { decile: "D9", predicted: 0.031, actual: 0.028 },
+  { decile: "D10", predicted: 0.019, actual: 0.021 },
 ];
 
 const dmaData = [
@@ -609,11 +612,12 @@ export default function Home() {
 
               <div className="border border-zinc-200 bg-white">
                 <SectionHeader
-                  title="Acquisition score deciles"
-                  description="Average propensity score by customer decile (D1 = highest)."
+                  eyebrow="Model validation"
+                  title="Actual vs. Predicted Conversion Rate"
+                  description="Predicted probability decile vs. observed conversion rate (D1 = highest)."
                   action={
                     <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-zinc-400">
-                      Avg score
+                      Conversion rate
                     </span>
                   }
                 />
@@ -621,7 +625,7 @@ export default function Home() {
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart
-                        data={decileData}
+                        data={validationData}
                         margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
                       >
                         <CartesianGrid vertical={false} stroke="#f1f1f3" />
@@ -637,7 +641,7 @@ export default function Home() {
                           fontSize={11}
                           tickLine={false}
                           axisLine={false}
-                          domain={[0, 1]}
+                          domain={[0, 0.2]}
                           tickFormatter={(value) =>
                             `${Math.round((value as number) * 100)}%`
                           }
@@ -653,19 +657,56 @@ export default function Home() {
                         />
                         <Line
                           type="monotone"
-                          dataKey="score"
-                          name="Score"
+                          dataKey="predicted"
+                          name="Predicted"
                           stroke="#0a0a0a"
                           strokeWidth={1.75}
                           dot={{ r: 2.5, fill: "#0a0a0a", strokeWidth: 0 }}
                           activeDot={{ r: 4, fill: "#0a0a0a", strokeWidth: 0 }}
                         />
+                        <Line
+                          type="monotone"
+                          dataKey="actual"
+                          name="Actual"
+                          stroke="#71717a"
+                          strokeWidth={1.5}
+                          strokeDasharray="4 3"
+                          dot={{ r: 2.5, fill: "#71717a", strokeWidth: 0 }}
+                          activeDot={{ r: 4, fill: "#71717a", strokeWidth: 0 }}
+                        />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                   <div className="mt-2 flex items-center gap-4 px-2 text-[11px] text-zinc-500">
-                    <span>n = 200,000 across 10 deciles</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-0.5 w-3 bg-zinc-950" />
+                      Predicted
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <svg
+                        aria-hidden
+                        viewBox="0 0 12 2"
+                        className="h-0.5 w-3"
+                      >
+                        <line
+                          x1="0"
+                          y1="1"
+                          x2="12"
+                          y2="1"
+                          stroke="#71717a"
+                          strokeWidth="2"
+                          strokeDasharray="4 3"
+                        />
+                      </svg>
+                      Actual
+                    </span>
                   </div>
+                  <p className="mt-2 px-2 text-[11px] leading-4 text-zinc-500">
+                    Higher-scored deciles should show higher observed
+                    conversion rates. Close alignment between predicted and
+                    actual rates indicates the model is directionally
+                    calibrated.
+                  </p>
                 </div>
               </div>
             </div>
