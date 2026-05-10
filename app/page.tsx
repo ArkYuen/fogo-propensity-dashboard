@@ -233,19 +233,46 @@ const modelVersionCopy: Record<string, string> = {
     "Comparison mode placeholder; final version will show movement by region.",
 };
 
-// SVG region layout — viewBox 800 × 340. Approximate US geography
-// using six rectangles. Reads as "regional audience map" without
-// pulling in a GIS package or fetching external geo data.
+// Hand-crafted SVG polygon paths approximating the contiguous US
+// silhouette, partitioned into six regions. ViewBox 800 × 400.
+// Geography is simplified — straight-line polygons with a few
+// inflection points per region so the result reads as a regional US
+// map (CA bulge on the Pacific, TX bulge into Mexico, FL peninsula)
+// without needing any GIS package or external geo data.
 const regionLayouts: Record<
   Region,
-  { x: number; y: number; w: number; h: number; labelX: number; labelY: number }
+  { path: string; labelX: number; labelY: number }
 > = {
-  West:             { x: 4,   y: 4,   w: 240, h: 292, labelX: 124, labelY: 150 },
-  Midwest:          { x: 250, y: 4,   w: 240, h: 160, labelX: 370, labelY: 84 },
-  "Texas / Plains": { x: 250, y: 170, w: 240, h: 126, labelX: 370, labelY: 233 },
-  Northeast:        { x: 496, y: 4,   w: 300, h: 110, labelX: 646, labelY: 59 },
-  Southeast:        { x: 496, y: 120, w: 300, h: 130, labelX: 646, labelY: 185 },
-  Florida:          { x: 550, y: 256, w: 246, h: 80,  labelX: 673, labelY: 296 },
+  West: {
+    path: "M 30 30 L 240 30 L 240 305 L 70 295 L 45 215 L 30 80 Z",
+    labelX: 130,
+    labelY: 165,
+  },
+  Midwest: {
+    path: "M 240 30 L 490 30 L 490 170 L 240 170 Z",
+    labelX: 365,
+    labelY: 100,
+  },
+  Northeast: {
+    path: "M 490 30 L 775 35 L 770 170 L 490 170 Z",
+    labelX: 633,
+    labelY: 100,
+  },
+  "Texas / Plains": {
+    path: "M 240 170 L 490 170 L 490 290 L 460 365 L 305 365 L 240 305 Z",
+    labelX: 365,
+    labelY: 245,
+  },
+  Southeast: {
+    path: "M 490 170 L 690 170 L 700 290 L 490 290 Z",
+    labelX: 595,
+    labelY: 230,
+  },
+  Florida: {
+    path: "M 580 290 L 700 290 L 720 400 L 605 400 L 580 335 Z",
+    labelX: 650,
+    labelY: 345,
+  },
 };
 
 // === API response types & audience param mapping ===
@@ -852,10 +879,10 @@ export default function Home() {
             <div className="lg:col-span-3">
               <div className="relative">
                 <svg
-                  viewBox="0 0 800 340"
+                  viewBox="0 0 800 400"
                   className="h-auto w-full"
                   role="img"
-                  aria-label="Regional audience concentration map"
+                  aria-label="Regional audience concentration map of the United States"
                 >
                   {REGIONS.map((r) => {
                     const layout = regionLayouts[r];
@@ -897,14 +924,12 @@ export default function Home() {
                         }
                         onMouseLeave={() => setMapTooltip(null)}
                       >
-                        <rect
-                          x={layout.x}
-                          y={layout.y}
-                          width={layout.w}
-                          height={layout.h}
+                        <path
+                          d={layout.path}
                           fill={fill}
                           stroke={stroke}
                           strokeWidth={strokeWidth}
+                          strokeLinejoin="round"
                         />
                         <text
                           x={layout.labelX}
@@ -1023,9 +1048,8 @@ export default function Home() {
             </div>
           </div>
           <p className="border-t border-[#eef0f3] px-4 py-2 text-[10px] text-[#9ca3af]">
-            Regional map uses mocked values for design validation. Final
-            version will be powered by fixed BigQuery queries grouped by
-            DMA/region.
+            Regional values from BigQuery DMA aggregation. Region
+            boundaries are simplified for executive summary view.
           </p>
         </CardPanel>
 
