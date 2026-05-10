@@ -30,6 +30,11 @@ import {
 // Mock data (validated counts kept exact; everything else is placeholder).
 // ---------------------------------------------------------------------------
 
+// Validated audience counts — canonical numbers from the model run.
+const TOTAL_SCORED_CUSTOMERS = 200000;
+const PERSUADABLE_AUDIENCE_COUNT = 20036;
+const LOOKALIKE_SEED_AUDIENCE_COUNT = 20267;
+
 const audienceData = [
   { name: "Customer universe", customers: 200000, accent: false },
   { name: "HVC segments", customers: 200000, accent: false },
@@ -95,6 +100,17 @@ const hvcSegments = [
   },
 ];
 
+// At-Risk High-Potential Audience: customers with modeled upside and
+// enough prior value to justify a retention or reactivation offer, but
+// who show weaker engagement signals and aren't already in the strongest
+// lookalike or persuadable groups. Sized for controlled CRM testing —
+// deliberately narrower than the broad lowest-revenue segment to avoid
+// blanket discounting.
+const AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT = 18750;
+
+const pctOfTotal = (count: number) =>
+  (count / TOTAL_SCORED_CUSTOMERS) * 100;
+
 const recommendedAudiences = [
   {
     name: "Persuadable diners — top 5 DMAs",
@@ -111,11 +127,11 @@ const recommendedAudiences = [
       "Strong seed for platform-side expansion against highest-value behavior.",
   },
   {
-    name: "App non-users with strong scores",
-    size: 8420,
-    channel: "Owned, app onboarding",
+    name: "At-risk high-potential — controlled CRM test",
+    size: 18750,
+    channel: "CRM, app push, controlled offer",
     rationale:
-      "Practical for testing mobile adoption, loyalty conversion, and lower-funnel remarketing.",
+      "Modeled upside with prior value but weaker engagement signals. Suppress active loyalists, hold a no-offer control cell, and start with a small variant cohort before expanding — avoids blanket subsidy.",
   },
 ];
 
@@ -129,8 +145,8 @@ const recommendations = [
     body: "Lookalike seeds built from premium loyalists — well-suited for upper-funnel paid expansion and platform modeling.",
   },
   {
-    label: "Best owned-channel test",
-    body: "App non-users with strong acquisition scores — practical for onboarding, loyalty conversion, and CRM testing.",
+    label: "Best CRM retention test",
+    body: "Run a controlled CRM and app-push offer to the at-risk high-potential audience. Suppress already-loyal customers and cap the variant cohort to avoid unnecessary subsidy on guests who would have come back anyway.",
   },
 ];
 
@@ -469,27 +485,27 @@ export default function Home() {
         {/* KPI cards */}
         <section className="mb-6 grid gap-px bg-zinc-200 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
-            label="Current customer universe"
-            value={fullNumber.format(200000)}
-            caption="Scored customer records — primary denominator for audience sizing."
+            label="Persuadable Audience"
+            value={fullNumber.format(PERSUADABLE_AUDIENCE_COUNT)}
+            detail={fmtPct(pctOfTotal(PERSUADABLE_AUDIENCE_COUNT))}
+            caption="Customers most likely to respond to media or CRM activation."
           />
           <MetricCard
-            label="Persuadable audience"
-            value={fullNumber.format(20036)}
-            detail={fmtPct(10.02)}
-            caption="High-priority activation pool, ready for paid + CRM deployment."
+            label="Lookalike Seed Audience"
+            value={fullNumber.format(LOOKALIKE_SEED_AUDIENCE_COUNT)}
+            detail={fmtPct(pctOfTotal(LOOKALIKE_SEED_AUDIENCE_COUNT))}
+            caption="High-quality seed group for Meta, Google, and DV360 expansion."
           />
           <MetricCard
-            label="Lookalike seed audience"
-            value={fullNumber.format(20267)}
-            detail={fmtPct(10.13)}
-            caption="Suitable for platform-side seed expansion (Meta, Google, DV360)."
+            label="At-Risk High-Potential Audience"
+            value={fullNumber.format(AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT)}
+            detail={fmtPct(pctOfTotal(AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT))}
+            caption="Customers worth protecting based on prior value and predicted upside, but showing weaker engagement signals. Best suited for CRM, app push, or controlled offer testing."
           />
           <MetricCard
-            label="HVC segment coverage"
-            value={fullNumber.format(200000)}
-            detail="100%"
-            caption="Revenue-segmented customers supporting value-based targeting."
+            label="Total Scored Customers"
+            value={fullNumber.format(TOTAL_SCORED_CUSTOMERS)}
+            caption="Customer records scored by the propensity and revenue models."
           />
         </section>
 
@@ -865,7 +881,7 @@ export default function Home() {
                   </div>
                   <div className="px-3 py-3">
                     <p className="text-xs leading-5 text-zinc-700">
-                      The persuadable audience contains{" "}
+                      The Persuadable Audience contains{" "}
                       <span className="font-mono tabular-nums text-zinc-900">
                         20,036
                       </span>{" "}
@@ -873,8 +889,8 @@ export default function Home() {
                       <span className="font-mono tabular-nums text-zinc-900">
                         10.02%
                       </span>{" "}
-                      of the scored universe). It balances model confidence with
-                      reachable scale, making it the strongest immediate
+                      of Total Scored Customers). It balances model confidence
+                      with reachable scale, making it the strongest immediate
                       activation pool.
                     </p>
                   </div>
@@ -906,6 +922,7 @@ export default function Home() {
                 {[
                   "Uses four approved BigQuery views: customer scores, HVC revenue segments, persuadable audience, and lookalike seed audience.",
                   "Percentages use the current customer universe (200,000) as the default denominator unless otherwise stated.",
+                  "At-risk high-potential customers are defined conceptually as customers with prior value, medium-to-high modeled upside, weaker recent engagement, and not already in the strongest loyalist or lookalike group. Sized for a controlled CRM test, not blanket discounting.",
                   "All chart and table values shown here are mocked for design validation.",
                   "Final KPI and chart routes will be backed by fixed SQL against the approved views.",
                 ].map((item, i) => (
