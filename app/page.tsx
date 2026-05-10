@@ -2,11 +2,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  ComposableMap,
-  Geographies,
-  Geography,
-} from "react-simple-maps";
-import {
   Bar,
   BarChart,
   CartesianGrid,
@@ -238,48 +233,20 @@ const modelVersionCopy: Record<string, string> = {
     "Comparison mode placeholder; final version will show movement by region.",
 };
 
-// US states grouped into the same six regions used by regionAudienceData.
-// State names match the `properties.name` field in us-atlas TopoJSON.
-const regionStates: Record<Region, string[]> = {
-  Northeast: [
-    "Maine", "New Hampshire", "Vermont", "Massachusetts", "Rhode Island",
-    "Connecticut", "New York", "New Jersey", "Pennsylvania",
-  ],
-  Southeast: [
-    "Virginia", "West Virginia", "Kentucky", "Tennessee", "North Carolina",
-    "South Carolina", "Georgia", "Alabama", "Mississippi", "Arkansas",
-    "Louisiana",
-  ],
-  Florida: ["Florida"],
-  Midwest: [
-    "Ohio", "Michigan", "Indiana", "Illinois", "Wisconsin", "Minnesota",
-    "Iowa", "Missouri",
-  ],
-  "Texas / Plains": [
-    "Texas", "Oklahoma", "Kansas", "Nebraska", "South Dakota", "North Dakota",
-  ],
-  West: [
-    "Montana", "Wyoming", "Colorado", "New Mexico", "Idaho", "Utah",
-    "Arizona", "Nevada", "California", "Oregon", "Washington",
-    "Alaska", "Hawaii",
-  ],
+// SVG region layout — viewBox 800 × 340. Approximate US geography
+// using six rectangles. Reads as "regional audience map" without
+// pulling in a GIS package or fetching external geo data.
+const regionLayouts: Record<
+  Region,
+  { x: number; y: number; w: number; h: number; labelX: number; labelY: number }
+> = {
+  West:             { x: 4,   y: 4,   w: 240, h: 292, labelX: 124, labelY: 150 },
+  Midwest:          { x: 250, y: 4,   w: 240, h: 160, labelX: 370, labelY: 84 },
+  "Texas / Plains": { x: 250, y: 170, w: 240, h: 126, labelX: 370, labelY: 233 },
+  Northeast:        { x: 496, y: 4,   w: 300, h: 110, labelX: 646, labelY: 59 },
+  Southeast:        { x: 496, y: 120, w: 300, h: 130, labelX: 646, labelY: 185 },
+  Florida:          { x: 550, y: 256, w: 246, h: 80,  labelX: 673, labelY: 296 },
 };
-
-const stateToRegion: Record<string, Region> = (() => {
-  const map: Record<string, Region> = {};
-  (Object.entries(regionStates) as [Region, string[]][]).forEach(
-    ([region, states]) => {
-      states.forEach((s) => {
-        map[s] = region;
-      });
-    },
-  );
-  return map;
-})();
-
-// US states TopoJSON, fetched client-side. No API key required.
-const US_STATES_GEO_URL =
-  "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 
 // === API response types & audience param mapping ===
 
@@ -663,9 +630,9 @@ export default function Home() {
   const [mapTooltip, setMapTooltip] = useState<{
     x: number;
     y: number;
-    state: string;
     region: Region;
     count: number;
+    share: number;
   } | null>(null);
 
   // === Live BigQuery state ===
@@ -746,17 +713,6 @@ export default function Home() {
     : null;
   const regionCount = (region: Region) =>
     liveRegionMap?.[region] ?? regionAudienceData[audienceFocus][region];
-
-  // Closure version of stateAudienceFor that respects live region data.
-  const stateAudienceFor = (
-    stateName: string,
-  ): { region: Region; count: number } | null => {
-    const region = stateToRegion[stateName];
-    if (!region) return null;
-    const regionTotal = regionCount(region);
-    const states = regionStates[region];
-    return { region, count: Math.round(regionTotal / states.length) };
-  };
 
   // === Derived map state ===
   const regionRows = REGIONS.map((r) => ({
@@ -895,72 +851,88 @@ export default function Home() {
             {/* Map */}
             <div className="lg:col-span-3">
               <div className="relative">
-                <ComposableMap
-                  projection="geoAlbersUsa"
-                  width={800}
-                  height={500}
-                  style={{ width: "100%", height: "auto" }}
+                <svg
+                  viewBox="0 0 800 340"
+                  className="h-auto w-full"
+                  role="img"
+                  aria-label="Regional audience concentration map"
                 >
-                  <Geographies geography={US_STATES_GEO_URL}>
-                    {({ geographies }) =>
-                      geographies.map((geo) => {
-                        const stateName = (geo.properties as { name?: string })
-                          .name;
-                        const info = stateName
-                          ? stateAudienceFor(stateName)
-                          : null;
-                        const tier = info
-                          ? tierByRegion[info.region]
-                          : ("low" as const);
-                        const highlighted = info
-                          ? isHighlighted(info.region)
-                          : true;
-                        const opacity =
-                          isHighlightActive && !highlighted ? 0.3 : 1;
-                        const fill = tierColor(tier);
-                        return (
-                          <Geography
-                            key={geo.rsmKey}
-                            geography={geo}
-                            fill={fill}
-                            fillOpacity={opacity}
-                            stroke="#ffffff"
-                            strokeWidth={0.6}
-                            style={{
-                              default: { outline: "none" },
-                              hover: {
-                                outline: "none",
-                                fill,
-                                fillOpacity: Math.min(opacity, 0.85),
-                                cursor: "pointer",
-                              },
-                              pressed: { outline: "none" },
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!info || !stateName) return;
-                              setMapTooltip({
-                                x: e.clientX,
-                                y: e.clientY,
-                                state: stateName,
-                                region: info.region,
-                                count: info.count,
-                              });
-                            }}
-                            onMouseMove={(e) => {
-                              if (!info) return;
-                              setMapTooltip((prev) =>
-                                prev
-                                  ? { ...prev, x: e.clientX, y: e.clientY }
-                                  : prev,
-                              );
-                            }}
-                            onMouseLeave={() => setMapTooltip(null)}
-                          />
-                        );
-                      })
-                    }
-                  </Geographies>
-                </ComposableMap>
+                  {REGIONS.map((r) => {
+                    const layout = regionLayouts[r];
+                    const tier = tierByRegion[r];
+                    const highlighted = isHighlighted(r);
+                    const opacity =
+                      isHighlightActive && !highlighted ? 0.3 : 1;
+                    const fill = tierColor(tier);
+                    const stroke =
+                      isHighlightActive && highlighted
+                        ? "#1f2937"
+                        : "#ffffff";
+                    const strokeWidth =
+                      isHighlightActive && highlighted ? 2.5 : 1.5;
+                    const value = regionCount(r);
+                    const share = totalAudienceCount
+                      ? (value * 100) / totalAudienceCount
+                      : 0;
+                    return (
+                      <g
+                        key={r}
+                        opacity={opacity}
+                        style={{ cursor: "pointer" }}
+                        onMouseEnter={(e) =>
+                          setMapTooltip({
+                            x: e.clientX,
+                            y: e.clientY,
+                            region: r,
+                            count: value,
+                            share,
+                          })
+                        }
+                        onMouseMove={(e) =>
+                          setMapTooltip((prev) =>
+                            prev
+                              ? { ...prev, x: e.clientX, y: e.clientY }
+                              : prev,
+                          )
+                        }
+                        onMouseLeave={() => setMapTooltip(null)}
+                      >
+                        <rect
+                          x={layout.x}
+                          y={layout.y}
+                          width={layout.w}
+                          height={layout.h}
+                          fill={fill}
+                          stroke={stroke}
+                          strokeWidth={strokeWidth}
+                        />
+                        <text
+                          x={layout.labelX}
+                          y={layout.labelY - 8}
+                          textAnchor="middle"
+                          fill={tierTextColor(tier)}
+                          fontSize="12"
+                          fontWeight="500"
+                          opacity="0.9"
+                          pointerEvents="none"
+                        >
+                          {r}
+                        </text>
+                        <text
+                          x={layout.labelX}
+                          y={layout.labelY + 14}
+                          textAnchor="middle"
+                          fill={tierTextColor(tier)}
+                          fontSize="17"
+                          fontWeight="600"
+                          pointerEvents="none"
+                        >
+                          {compactNumber.format(value)}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
                 {mapTooltip ? (
                   <div
                     className="pointer-events-none fixed z-50 border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[11px] shadow-sm"
@@ -970,15 +942,12 @@ export default function Home() {
                     }}
                   >
                     <div className="font-medium text-[#1f2937]">
-                      {mapTooltip.state}
-                    </div>
-                    <div className="text-[10px] text-[#6b7280]">
-                      {mapTooltip.region} region
+                      {mapTooltip.region}
                     </div>
                     <div className="mt-0.5 tabular-nums text-[#1f2937]">
-                      {fullNumber.format(mapTooltip.count)} ·{" "}
+                      {fullNumber.format(mapTooltip.count)}{" "}
                       <span className="text-[10px] text-[#6b7280]">
-                        per-state allocation
+                        · {mapTooltip.share.toFixed(1)}% of selected audience
                       </span>
                     </div>
                   </div>
