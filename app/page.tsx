@@ -1,5 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import {
+  ComposableMap,
+  Geographies,
+  Geography,
+} from "react-simple-maps";
 import {
   Bar,
   BarChart,
@@ -7,15 +13,13 @@ import {
   Cell,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -27,24 +31,70 @@ import {
 } from "@/components/ui/table";
 
 // ---------------------------------------------------------------------------
+// Tableau / Salesforce-inspired muted enterprise BI palette.
+// ---------------------------------------------------------------------------
+
+const C = {
+  primary: "#4e79a7",      // muted blue — main metric / positive
+  accent: "#f28e2c",       // soft orange — opportunity / warning
+  baseline: "#cbd1d8",     // pale gray — baseline / random / comparison
+  positive: "#59a14f",     // green — stable
+  warning: "#edc949",      // amber — watch
+  critical: "#e15759",     // muted red — review
+  text: "#1f2937",         // charcoal
+  textMid: "#4b5563",
+  textMuted: "#6b7280",
+  textSubtle: "#9ca3af",
+  border: "#e5e7eb",
+  borderSoft: "#eef0f3",
+  bg: "#f7f8fa",
+  bgPanel: "#f3f5f7",
+  bgSubtle: "#fafbfc",
+};
+
+// ---------------------------------------------------------------------------
 // Mock data (validated counts kept exact; everything else is placeholder).
 // ---------------------------------------------------------------------------
 
-// Validated audience counts — canonical numbers from the model run.
 const TOTAL_SCORED_CUSTOMERS = 200000;
 const PERSUADABLE_AUDIENCE_COUNT = 20036;
 const LOOKALIKE_SEED_AUDIENCE_COUNT = 20267;
+const AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT = 18750;
+const POPULATION_BASELINE_RATE = 0.087;
 
 const audienceData = [
-  { name: "Customer universe", customers: 200000, accent: false },
-  { name: "HVC segments", customers: 200000, accent: false },
-  { name: "Persuadable", customers: 20036, accent: true },
-  { name: "Lookalike seed", customers: 20267, accent: true },
+  { name: "Persuadable", customers: PERSUADABLE_AUDIENCE_COUNT, color: C.primary },
+  { name: "Lookalike", customers: LOOKALIKE_SEED_AUDIENCE_COUNT, color: C.primary },
+  { name: "At-risk", customers: AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT, color: C.accent },
+  { name: "Total scored", customers: TOTAL_SCORED_CUSTOMERS, color: C.baseline },
 ];
 
-// Model validation: predicted probability vs. observed conversion rate
-// per propensity decile (D1 = highest). Mocked but realistic — actual
-// roughly tracks predicted with mild over- and under-shoot.
+const decileConversionData = [
+  { decile: "D1", rate: 0.179 },
+  { decile: "D2", rate: 0.151 },
+  { decile: "D3", rate: 0.127 },
+  { decile: "D4", rate: 0.109 },
+  { decile: "D5", rate: 0.086 },
+  { decile: "D6", rate: 0.071 },
+  { decile: "D7", rate: 0.052 },
+  { decile: "D8", rate: 0.046 },
+  { decile: "D9", rate: 0.028 },
+  { decile: "D10", rate: 0.021 },
+];
+
+const cumulativeGainData = [
+  { population: 10, model: 20.6, random: 10 },
+  { population: 20, model: 38.0, random: 20 },
+  { population: 30, model: 52.6, random: 30 },
+  { population: 40, model: 65.1, random: 40 },
+  { population: 50, model: 75.0, random: 50 },
+  { population: 60, model: 83.2, random: 60 },
+  { population: 70, model: 89.2, random: 70 },
+  { population: 80, model: 94.5, random: 80 },
+  { population: 90, model: 97.7, random: 90 },
+  { population: 100, model: 100, random: 100 },
+];
+
 const validationData = [
   { decile: "D1", predicted: 0.185, actual: 0.179 },
   { decile: "D2", predicted: 0.158, actual: 0.151 },
@@ -69,117 +119,209 @@ const dmaData = [
 ];
 
 const hvcSegments = [
-  {
-    segment: "Premium loyalists",
-    customers: 42100,
-    revenue: 18400000,
-    visits: 8.7,
-    avgCheck: 74,
-    share: 21.1,
-  },
-  {
-    segment: "High-spend occasionals",
-    customers: 31800,
-    revenue: 13200000,
-    visits: 3.2,
-    avgCheck: 96,
-    share: 15.9,
-  },
-  {
-    segment: "Growth potential",
-    customers: 54700,
-    revenue: 10600000,
-    visits: 4.4,
-    avgCheck: 58,
-    share: 27.4,
-  },
-  {
-    segment: "Emerging guests",
-    customers: 71400,
-    revenue: 7900000,
-    visits: 2.1,
-    avgCheck: 49,
-    share: 35.7,
-  },
+  { segment: "Premium loyalists", customers: 42100, revenue: 18400000, visits: 8.7, avgCheck: 74, share: 21.1 },
+  { segment: "High-spend occasionals", customers: 31800, revenue: 13200000, visits: 3.2, avgCheck: 96, share: 15.9 },
+  { segment: "Growth potential", customers: 54700, revenue: 10600000, visits: 4.4, avgCheck: 58, share: 27.4 },
+  { segment: "Emerging guests", customers: 71400, revenue: 7900000, visits: 2.1, avgCheck: 49, share: 35.7 },
 ];
-
-// At-Risk High-Potential Audience: customers with modeled upside and
-// enough prior value to justify a retention or reactivation offer, but
-// who show weaker engagement signals and aren't already in the strongest
-// lookalike or persuadable groups. Sized for controlled CRM testing —
-// deliberately narrower than the broad lowest-revenue segment to avoid
-// blanket discounting.
-const AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT = 18750;
-
-const pctOfTotal = (count: number) =>
-  (count / TOTAL_SCORED_CUSTOMERS) * 100;
 
 const recommendedAudiences = [
-  {
-    name: "Persuadable diners — top 5 DMAs",
-    size: 15340,
-    channel: "Paid social, CRM",
-    rationale:
-      "Best near-term activation pool: highest model confidence concentrated in scaled media markets.",
-  },
-  {
-    name: "Lookalike seed — premium loyalists",
-    size: 20267,
-    channel: "Meta, Google, DV360",
-    rationale:
-      "Strong seed for platform-side expansion against highest-value behavior.",
-  },
-  {
-    name: "At-risk high-potential — controlled CRM test",
-    size: 18750,
-    channel: "CRM, app push, controlled offer",
-    rationale:
-      "Modeled upside with prior value but weaker engagement signals. Suppress active loyalists, hold a no-offer control cell, and start with a small variant cohort before expanding — avoids blanket subsidy.",
-  },
+  { name: "Persuadable diners — top 5 DMAs", size: 15340, channel: "Paid social, CRM" },
+  { name: "Lookalike seed — premium loyalists", size: 20267, channel: "Meta, Google, DV360" },
+  { name: "At-risk high-potential — controlled CRM", size: 18750, channel: "CRM, app push" },
 ];
 
-const recommendations = [
-  {
-    label: "Best near-term activation",
-    body: "Persuadable diners in the top five DMAs — strongest balance of scale, model confidence, and media-market readiness.",
-  },
-  {
-    label: "Best expansion play",
-    body: "Lookalike seeds built from premium loyalists — well-suited for upper-funnel paid expansion and platform modeling.",
-  },
-  {
-    label: "Best CRM retention test",
-    body: "Run a controlled CRM and app-push offer to the at-risk high-potential audience. Suppress already-loyal customers and cap the variant cohort to avoid unnecessary subsidy on guests who would have come back anyway.",
-  },
+const psiData = [
+  { feature: "Days since last visit", psi: 0.18, interpretation: "Recent engagement patterns have shifted moderately." },
+  { feature: "Lifetime revenue", psi: 0.07, interpretation: "Historical value distribution remains consistent." },
+  { feature: "Average check", psi: 0.11, interpretation: "Spend behavior is beginning to move from training baseline." },
+  { feature: "Visit count", psi: 0.05, interpretation: "Frequency distribution is stable." },
+  { feature: "App ownership", psi: 0.22, interpretation: "App adoption mix has changed enough to review model assumptions." },
 ];
 
-const filters = [
-  {
-    label: "Audience focus",
-    value: "Persuadable customers",
-    options: [
-      "Persuadable customers",
-      "Lookalike seed audience",
-      "Customer universe",
-      "High-value customer segments",
-    ],
-  },
-  {
-    label: "Market scope",
-    value: "Top DMAs",
-    options: ["Top DMAs", "All markets", "Northeast", "South", "Midwest"],
-  },
-  {
-    label: "Activation objective",
-    value: "Paid media + CRM",
-    options: ["Paid media + CRM", "CRM only", "App adoption", "Lookalike modeling"],
-  },
-  {
-    label: "Model version",
-    value: "v2 — current",
-    options: ["v2 — current", "v1 — previous", "Compare versions"],
-  },
+const labelDriftData = [
+  { month: "Jan", observed: 9.2, baseline: 9.0 },
+  { month: "Feb", observed: 9.1, baseline: 9.0 },
+  { month: "Mar", observed: 8.8, baseline: 9.0 },
+  { month: "Apr", observed: 8.4, baseline: 9.0 },
+  { month: "May", observed: 7.9, baseline: 9.0 },
+  { month: "Jun", observed: 7.6, baseline: 9.0 },
 ];
+
+// === Filter options ===
+const FILTER_OPTIONS = {
+  audience: [
+    "Persuadable customers",
+    "Lookalike seed audience",
+    "At-risk high-potential audience",
+    "Total scored customers",
+  ],
+  market: ["All regions", "Northeast", "South", "Midwest", "West"],
+  objective: [
+    "Paid media + CRM",
+    "CRM only",
+    "App adoption",
+    "Lookalike modeling",
+  ],
+  model: ["Current", "Previous", "Compare versions"],
+};
+
+// === Regional audience map ===
+const REGIONS = [
+  "Northeast",
+  "Southeast",
+  "Midwest",
+  "Texas / Plains",
+  "West",
+  "Florida",
+] as const;
+type Region = (typeof REGIONS)[number];
+
+const regionAudienceData: Record<string, Record<Region, number>> = {
+  "Persuadable customers": {
+    Northeast: 4920,
+    Southeast: 3780,
+    Midwest: 2640,
+    "Texas / Plains": 4110,
+    West: 2420,
+    Florida: 2166,
+  },
+  "Lookalike seed audience": {
+    Northeast: 4300,
+    Southeast: 3450,
+    Midwest: 2920,
+    "Texas / Plains": 4620,
+    West: 2680,
+    Florida: 2297,
+  },
+  "At-risk high-potential audience": {
+    Northeast: 3980,
+    Southeast: 3120,
+    Midwest: 2750,
+    "Texas / Plains": 3600,
+    West: 2210,
+    Florida: 3090,
+  },
+  "Total scored customers": {
+    Northeast: 46500,
+    Southeast: 35200,
+    Midwest: 28900,
+    "Texas / Plains": 39700,
+    West: 25600,
+    Florida: 24100,
+  },
+};
+
+const marketScopeToRegions: Record<string, Region[]> = {
+  "All regions": [],
+  Northeast: ["Northeast"],
+  South: ["Southeast", "Florida"],
+  Midwest: ["Midwest"],
+  West: ["West"],
+};
+
+const activationCopy: Record<string, string> = {
+  "Paid media + CRM":
+    "Use top regions for paid social reach and CRM suppression planning.",
+  "CRM only":
+    "Prioritize regions where audience concentration supports controlled email or push testing.",
+  "App adoption":
+    "Focus on regions where high-potential customers can be moved into app onboarding.",
+  "Lookalike modeling":
+    "Use high-quality regional seed density to guide platform expansion.",
+};
+
+const modelVersionCopy: Record<string, string> = {
+  Current: "Showing current production scoring output.",
+  Previous: "Showing prior model scoring snapshot.",
+  "Compare versions":
+    "Comparison mode placeholder; final version will show movement by region.",
+};
+
+// US states grouped into the same six regions used by regionAudienceData.
+// State names match the `properties.name` field in us-atlas TopoJSON.
+const regionStates: Record<Region, string[]> = {
+  Northeast: [
+    "Maine", "New Hampshire", "Vermont", "Massachusetts", "Rhode Island",
+    "Connecticut", "New York", "New Jersey", "Pennsylvania",
+  ],
+  Southeast: [
+    "Virginia", "West Virginia", "Kentucky", "Tennessee", "North Carolina",
+    "South Carolina", "Georgia", "Alabama", "Mississippi", "Arkansas",
+    "Louisiana",
+  ],
+  Florida: ["Florida"],
+  Midwest: [
+    "Ohio", "Michigan", "Indiana", "Illinois", "Wisconsin", "Minnesota",
+    "Iowa", "Missouri",
+  ],
+  "Texas / Plains": [
+    "Texas", "Oklahoma", "Kansas", "Nebraska", "South Dakota", "North Dakota",
+  ],
+  West: [
+    "Montana", "Wyoming", "Colorado", "New Mexico", "Idaho", "Utah",
+    "Arizona", "Nevada", "California", "Oregon", "Washington",
+    "Alaska", "Hawaii",
+  ],
+};
+
+const stateToRegion: Record<string, Region> = (() => {
+  const map: Record<string, Region> = {};
+  (Object.entries(regionStates) as [Region, string[]][]).forEach(
+    ([region, states]) => {
+      states.forEach((s) => {
+        map[s] = region;
+      });
+    },
+  );
+  return map;
+})();
+
+// US states TopoJSON, fetched client-side. No API key required.
+const US_STATES_GEO_URL =
+  "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
+
+// === API response types & audience param mapping ===
+
+type SummaryResp = {
+  totalCustomers: number;
+  hvcCustomers: number;
+  persuadableCustomers: number;
+  lookalikeSeedCustomers: number;
+  atRiskHighPotentialCustomers: number;
+  persuadablePct: number;
+  lookalikeSeedPct: number;
+  atRiskHighPotentialPct: number;
+  source: "bigquery" | "fallback";
+};
+
+type LiveDmaRow = {
+  dma: string;
+  customers: number;
+  avgIdentificationScore: number;
+  avgAcquisitionScore: number;
+};
+
+type LiveHvcRow = {
+  segment: string;
+  customers: number;
+  totalLifetimeRevenue: number;
+  avgLifetimeRevenue: number;
+  avgVisitCount: number;
+  avgCheck: number;
+};
+
+type LiveRegionRow = { region: string; customers: number; share: number };
+
+const AUDIENCE_TO_PARAM: Record<
+  string,
+  "persuadable" | "lookalike" | "at-risk" | "universe"
+> = {
+  "Persuadable customers": "persuadable",
+  "Lookalike seed audience": "lookalike",
+  "At-risk high-potential audience": "at-risk",
+  "Total scored customers": "universe",
+};
 
 const prompts = [
   "How many customers are in each audience?",
@@ -189,16 +331,14 @@ const prompts = [
 ];
 
 // ---------------------------------------------------------------------------
-// Formatters.
+// Helpers
 // ---------------------------------------------------------------------------
 
+const fullNumber = new Intl.NumberFormat("en-US");
 const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
-
-const fullNumber = new Intl.NumberFormat("en-US");
-
 const compactCurrency = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -210,85 +350,42 @@ function fmtPct(value: number, digits = 2) {
   return `${value.toFixed(digits)}%`;
 }
 
+const pctOfTotal = (count: number) =>
+  (count / TOTAL_SCORED_CUSTOMERS) * 100;
+
+function psiStatus(psi: number) {
+  if (psi >= 0.2) return { label: "Review", color: C.critical };
+  if (psi >= 0.1) return { label: "Watch", color: C.warning };
+  return { label: "Stable", color: C.positive };
+}
+
 // ---------------------------------------------------------------------------
-// Reusable atoms.
+// Reusable atoms
 // ---------------------------------------------------------------------------
 
-function MetricCard({
-  label,
-  value,
-  detail,
-  caption,
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">
+      {children}
+    </p>
+  );
+}
+
+function CardPanel({
+  children,
+  className = "",
 }: {
-  label: string;
-  value: string;
-  detail?: string;
-  caption: string;
+  children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="border border-zinc-200 bg-white px-5 py-4">
-      <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-zinc-500">
-        {label}
-      </p>
-      <div className="mt-3 flex items-baseline gap-2">
-        <p className="font-mono text-[28px] font-medium leading-none tracking-tight tabular-nums text-zinc-950">
-          {value}
-        </p>
-        {detail ? (
-          <span className="font-mono text-xs tabular-nums text-zinc-500">
-            {detail}
-          </span>
-        ) : null}
-      </div>
-      <p className="mt-3 text-xs leading-5 text-zinc-500">{caption}</p>
+    <div className={`border border-[#e5e7eb] bg-white ${className}`}>
+      {children}
     </div>
   );
 }
 
-function FilterPill({
-  label,
-  value,
-  options,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-}) {
-  return (
-    <label className="group relative flex h-9 items-center gap-2 border border-zinc-200 bg-white px-3 text-sm text-zinc-700 transition-colors hover:border-zinc-300">
-      <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-zinc-500">
-        {label}
-      </span>
-      <span className="text-zinc-300">/</span>
-      <span className="truncate text-sm font-medium text-zinc-900">{value}</span>
-      <svg
-        aria-hidden
-        viewBox="0 0 12 12"
-        className="ml-1 h-3 w-3 text-zinc-400"
-      >
-        <path
-          d="M3 4.5l3 3 3-3"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <select
-        defaultValue={value}
-        className="absolute inset-0 cursor-pointer opacity-0"
-        aria-label={label}
-      >
-        {options.map((option) => (
-          <option key={option}>{option}</option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function SectionHeader({
+function PanelHeader({
   eyebrow,
   title,
   description,
@@ -300,16 +397,16 @@ function SectionHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-end justify-between gap-4 px-5 pt-4 pb-3">
+    <div className="flex items-end justify-between gap-3 border-b border-[#e5e7eb] bg-[#fafbfc] px-4 py-2.5">
       <div>
-        {eyebrow ? (
-          <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-zinc-500">
-            {eyebrow}
-          </p>
-        ) : null}
-        <h2 className="text-sm font-semibold text-zinc-950">{title}</h2>
+        {eyebrow ? <SectionLabel>{eyebrow}</SectionLabel> : null}
+        <p className="mt-0.5 text-[13px] font-semibold leading-tight text-[#1f2937]">
+          {title}
+        </p>
         {description ? (
-          <p className="mt-0.5 text-xs text-zinc-500">{description}</p>
+          <p className="mt-0.5 text-[11px] leading-4 text-[#6b7280]">
+            {description}
+          </p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
@@ -317,44 +414,222 @@ function SectionHeader({
   );
 }
 
-type ChartTooltipPayloadEntry = {
+function PrimaryKPI({
+  label,
+  value,
+  delta,
+  sub,
+  accent = C.primary,
+}: {
+  label: string;
+  value: string;
+  delta?: string;
+  sub?: string;
+  accent?: string;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">
+        {label}
+      </p>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span
+          className="text-[26px] font-semibold leading-none tracking-tight tabular-nums"
+          style={{ color: accent }}
+        >
+          {value}
+        </span>
+        {delta ? (
+          <span className="text-[11px] font-medium tabular-nums text-[#6b7280]">
+            {delta}
+          </span>
+        ) : null}
+      </div>
+      {sub ? (
+        <p className="mt-1 text-[11px] leading-4 text-[#6b7280]">{sub}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function MiniKPI({
+  label,
+  value,
+  sub,
+  dotColor,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  dotColor?: string;
+}) {
+  return (
+    <div className="border-l border-[#e5e7eb] px-3 first:pl-0 first:border-l-0">
+      <div className="flex items-center gap-1.5">
+        {dotColor ? (
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: dotColor }}
+          />
+        ) : null}
+        <p className="text-[10px] font-medium uppercase tracking-wide text-[#6b7280]">
+          {label}
+        </p>
+      </div>
+      <p className="mt-0.5 text-sm font-semibold tabular-nums text-[#1f2937]">
+        {value}
+      </p>
+      {sub ? (
+        <p className="text-[10px] leading-4 text-[#9ca3af]">{sub}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function BarRow({
+  label,
+  value,
+  share,
+  color = C.primary,
+}: {
+  label: string;
+  value: string;
+  share: number; // 0–100, relative to max
+  color?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-32 truncate text-[11px] text-[#1f2937]">{label}</div>
+      <div className="h-1.5 flex-1 bg-[#f3f5f7]">
+        <div
+          className="h-1.5"
+          style={{ width: `${Math.min(share, 100)}%`, background: color }}
+        />
+      </div>
+      <div className="w-14 shrink-0 text-right text-[11px] tabular-nums text-[#6b7280]">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({
+  status,
+}: {
+  status: { label: string; color: string };
+}) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-[11px] font-medium"
+      style={{ color: status.color }}
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ background: status.color }}
+      />
+      {status.label}
+    </span>
+  );
+}
+
+function FilterPill({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange?: (value: string) => void;
+}) {
+  return (
+    <label className="group relative flex h-7 items-center gap-2 border border-[#e5e7eb] bg-white px-2.5 text-[11px] text-[#4b5563] hover:border-[#9ca3af]">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-[#9ca3af]">
+        {label}
+      </span>
+      <span className="font-medium text-[#1f2937]">{value}</span>
+      <svg
+        viewBox="0 0 12 12"
+        className="ml-1 h-2.5 w-2.5 text-[#9ca3af]"
+        aria-hidden
+      >
+        <path
+          d="M3 4.5l3 3 3-3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <select
+        value={value}
+        onChange={(e) => onChange?.(e.target.value)}
+        className="absolute inset-0 cursor-pointer opacity-0"
+        aria-label={label}
+      >
+        {options.map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DashedSwatch({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 12 2" className="h-0.5 w-3" aria-hidden>
+      <line
+        x1="0"
+        y1="1"
+        x2="12"
+        y2="1"
+        stroke={color}
+        strokeWidth="2"
+        strokeDasharray="4 3"
+      />
+    </svg>
+  );
+}
+
+type TooltipEntry = {
   dataKey?: string | number;
   name?: string | number;
   value?: number | string;
   color?: string;
-  payload?: Record<string, unknown>;
 };
 
-function ChartTooltipBox({
+function ChartTooltip({
   active,
   payload,
   label,
   format,
 }: {
   active?: boolean;
-  payload?: ChartTooltipPayloadEntry[];
+  payload?: TooltipEntry[];
   label?: string | number;
   format: (value: number) => string;
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="border border-zinc-200 bg-white px-2.5 py-2 text-xs shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+    <div className="border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[11px] shadow-sm">
       {label !== undefined ? (
-        <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-zinc-500">
+        <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-[#6b7280]">
           {label}
         </div>
       ) : null}
       {payload.map((entry, idx) => (
         <div
           key={`${entry.dataKey ?? idx}`}
-          className="flex items-center gap-3 py-0.5"
+          className="flex items-center gap-2.5 py-0.5"
         >
           <span
             className="h-2 w-2"
-            style={{ background: entry.color ?? "#0a0a0a" }}
+            style={{ background: entry.color ?? C.text }}
           />
-          <span className="text-zinc-600">{entry.name ?? entry.dataKey}</span>
-          <span className="ml-auto font-mono tabular-nums text-zinc-950">
+          <span className="text-[#4b5563]">{entry.name ?? entry.dataKey}</span>
+          <span className="ml-auto font-medium tabular-nums text-[#1f2937]">
             {typeof entry.value === "number"
               ? format(entry.value)
               : String(entry.value ?? "")}
@@ -366,630 +641,1044 @@ function ChartTooltipBox({
 }
 
 // ---------------------------------------------------------------------------
-// Page.
+// Page
 // ---------------------------------------------------------------------------
 
 export default function Home() {
+  // === Filter state (drives the regional map) ===
+  const [audienceFocus, setAudienceFocus] = useState<string>(
+    FILTER_OPTIONS.audience[0],
+  );
+  const [marketScope, setMarketScope] = useState<string>(
+    FILTER_OPTIONS.market[0],
+  );
+  const [activationObjective, setActivationObjective] = useState<string>(
+    FILTER_OPTIONS.objective[0],
+  );
+  const [modelVersion, setModelVersion] = useState<string>(
+    FILTER_OPTIONS.model[0],
+  );
+
+  // Tooltip for the regional map (hover state)
+  const [mapTooltip, setMapTooltip] = useState<{
+    x: number;
+    y: number;
+    state: string;
+    region: Region;
+    count: number;
+  } | null>(null);
+
+  // === Live BigQuery state ===
+  const [liveSummary, setLiveSummary] = useState<SummaryResp | null>(null);
+  const [liveDmas, setLiveDmas] = useState<LiveDmaRow[] | null>(null);
+  const [liveHvc, setLiveHvc] = useState<LiveHvcRow[] | null>(null);
+  const [liveRegions, setLiveRegions] = useState<LiveRegionRow[] | null>(null);
+  const [bqStatus, setBqStatus] = useState<
+    "loading" | "connected" | "fallback"
+  >("loading");
+
+  // Fetch summary + DMAs + HVC once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/dashboard/summary", { cache: "no-store" })
+      .then((r) => r.json() as Promise<SummaryResp>)
+      .then((data) => {
+        if (cancelled) return;
+        setLiveSummary(data);
+        setBqStatus(data.source === "bigquery" ? "connected" : "fallback");
+      })
+      .catch(() => {
+        if (!cancelled) setBqStatus("fallback");
+      });
+    fetch("/api/dashboard/dmas", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((res: { data: LiveDmaRow[] }) => {
+        if (!cancelled && Array.isArray(res?.data)) setLiveDmas(res.data);
+      })
+      .catch(() => {});
+    fetch("/api/dashboard/hvc-segments", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((res: { data: LiveHvcRow[] }) => {
+        if (!cancelled && Array.isArray(res?.data)) setLiveHvc(res.data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Re-fetch regions whenever audience focus changes.
+  useEffect(() => {
+    let cancelled = false;
+    const param = AUDIENCE_TO_PARAM[audienceFocus] ?? "persuadable";
+    fetch(`/api/dashboard/regions?audience=${param}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((res: { data: LiveRegionRow[] }) => {
+        if (!cancelled && Array.isArray(res?.data)) setLiveRegions(res.data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [audienceFocus]);
+
+  // === Live-or-fallback computed values ===
+  const totalCustomers =
+    liveSummary?.totalCustomers ?? TOTAL_SCORED_CUSTOMERS;
+  const persuadableCount =
+    liveSummary?.persuadableCustomers ?? PERSUADABLE_AUDIENCE_COUNT;
+  const lookalikeSeedCount =
+    liveSummary?.lookalikeSeedCustomers ?? LOOKALIKE_SEED_AUDIENCE_COUNT;
+  const atRiskCount =
+    liveSummary?.atRiskHighPotentialCustomers ??
+    AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT;
+  const pctLive = (n: number) =>
+    totalCustomers ? (n * 100) / totalCustomers : 0;
+  const persuadablePct = liveSummary?.persuadablePct ?? pctLive(persuadableCount);
+  const lookalikeSeedPct =
+    liveSummary?.lookalikeSeedPct ?? pctLive(lookalikeSeedCount);
+  const atRiskPct =
+    liveSummary?.atRiskHighPotentialPct ?? pctLive(atRiskCount);
+
+  // Region map (live first, then fallback to mocked regional values).
+  const liveRegionMap: Record<string, number> | null = liveRegions
+    ? Object.fromEntries(liveRegions.map((r) => [r.region, r.customers]))
+    : null;
+  const regionCount = (region: Region) =>
+    liveRegionMap?.[region] ?? regionAudienceData[audienceFocus][region];
+
+  // Closure version of stateAudienceFor that respects live region data.
+  const stateAudienceFor = (
+    stateName: string,
+  ): { region: Region; count: number } | null => {
+    const region = stateToRegion[stateName];
+    if (!region) return null;
+    const regionTotal = regionCount(region);
+    const states = regionStates[region];
+    return { region, count: Math.round(regionTotal / states.length) };
+  };
+
+  // === Derived map state ===
+  const regionRows = REGIONS.map((r) => ({
+    region: r,
+    count: regionCount(r),
+  })).sort((a, b) => b.count - a.count);
+  const totalAudienceCount = regionRows.reduce((s, r) => s + r.count, 0);
+  const highlightedRegions = marketScopeToRegions[marketScope] ?? [];
+  const isHighlightActive = highlightedRegions.length > 0;
+  const tierByRegion: Record<string, "high" | "medium" | "low"> = {};
+  regionRows.forEach((r, i) => {
+    tierByRegion[r.region] = i < 2 ? "high" : i < 4 ? "medium" : "low";
+  });
+  const tierColor = (tier: "high" | "medium" | "low") =>
+    tier === "high" ? C.primary : tier === "medium" ? C.accent : C.baseline;
+  const tierTextColor = (tier: "high" | "medium" | "low") =>
+    tier === "low" ? "#1f2937" : "#ffffff";
+  const isHighlighted = (region: string) =>
+    isHighlightActive ? highlightedRegions.includes(region as Region) : true;
+
+  // === Other derived metrics ===
+  const liftAtTopDecile =
+    decileConversionData[0].rate / POPULATION_BASELINE_RATE;
+  const top30Capture = cumulativeGainData[2].model;
+  const top50Capture = cumulativeGainData[4].model;
+  const labelDriftDelta =
+    labelDriftData[labelDriftData.length - 1].observed -
+    labelDriftData[0].observed;
+
+  const psiCounts = psiData.reduce(
+    (acc, row) => {
+      const status = psiStatus(row.psi).label;
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+
+  const dmasMaxShare = Math.max(...dmaData.map((d) => d.share));
+
   return (
-    <main className="min-h-screen bg-zinc-50 text-zinc-950">
-      {/* Top status strip */}
-      <div className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex h-10 max-w-[1440px] items-center gap-4 px-6 text-xs text-zinc-500">
-          <span className="font-mono text-[11px] font-medium tracking-tight text-zinc-900">
+    <main className="min-h-screen bg-[#f7f8fa] text-[#1f2937]">
+      {/* Status strip */}
+      <div className="border-b border-[#e5e7eb] bg-white">
+        <div className="mx-auto flex h-9 max-w-[1440px] items-center gap-3 px-6 text-[11px] text-[#6b7280]">
+          <span className="font-semibold tracking-tight text-[#1f2937]">
             tombras-demo
           </span>
-          <span className="text-zinc-300">/</span>
-          <span className="font-mono text-[11px] text-zinc-700">
-            fogo_churrasgo
-          </span>
-          <span className="text-zinc-300">/</span>
-          <span className="font-mono text-[11px] text-zinc-700">
-            propensity-dashboard
-          </span>
+          <span className="text-[#d1d5db]">/</span>
+          <span>fogo_churrasgo</span>
+          <span className="text-[#d1d5db]">/</span>
+          <span>propensity-dashboard</span>
           <div className="ml-auto flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-zinc-600">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              </span>
-              Agent connected
+            <span className="flex items-center gap-1.5">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{
+                  background:
+                    bqStatus === "connected"
+                      ? C.positive
+                      : bqStatus === "loading"
+                        ? C.baseline
+                        : C.warning,
+                }}
+              />
+              {bqStatus === "connected"
+                ? "BigQuery connected"
+                : bqStatus === "loading"
+                  ? "Loading…"
+                  : "Using demo data"}
             </span>
-            <span className="text-zinc-300">·</span>
-            <span className="font-mono text-[11px] tabular-nums text-zinc-500">
-              snapshot · 09 May 2026
-            </span>
+            <span className="text-[#d1d5db]">·</span>
+            <span className="tabular-nums">Snapshot 10 May 2026</span>
           </div>
         </div>
       </div>
 
       {/* Header */}
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto max-w-[1440px] px-6 py-6">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div className="max-w-3xl">
-              <h1 className="text-[22px] font-semibold leading-tight tracking-tight text-zinc-950">
+      <header className="border-b border-[#e5e7eb] bg-white">
+        <div className="mx-auto max-w-[1440px] px-6 py-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <SectionLabel>
+                Fogo de Chão · Customer propensity
+              </SectionLabel>
+              <h1 className="mt-1 text-[20px] font-semibold leading-tight tracking-tight text-[#1f2937]">
                 Customer Propensity &amp; Activation
               </h1>
-              <p className="mt-1.5 text-sm leading-6 text-zinc-600">
+              <p className="mt-0.5 max-w-2xl text-xs leading-5 text-[#6b7280]">
                 Audience sizing, high-value customer profiling, and media
-                activation planning for the Fogo de Chão propensity model demo.
+                activation planning for the propensity model demo.
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                <Badge
-                  variant="outline"
-                  className="rounded-sm border-zinc-200 bg-white px-1.5 py-0 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-zinc-600"
-                >
-                  Internal demo
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className="rounded-sm border-zinc-200 bg-white px-1.5 py-0 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-zinc-600"
-                >
-                  BigQuery-backed
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className="rounded-sm border-zinc-200 bg-white px-1.5 py-0 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-zinc-600"
-                >
-                  Gemini agent enabled
-                </Badge>
-              </div>
             </div>
-
-            <div className="flex w-full max-w-sm flex-col border border-zinc-200 bg-white text-xs">
-              <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-                <span className="text-zinc-500">Connected agent</span>
-                <span className="font-medium text-zinc-900">
-                  Fogo Propensity Analytics Agent
-                </span>
-              </div>
-              <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-                <span className="text-zinc-500">Approved sources</span>
-                <span className="font-mono tabular-nums font-medium text-zinc-900">
-                  4 BigQuery views
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-zinc-500">Smoke test</span>
-                <span className="flex items-center gap-1.5 font-medium text-zinc-900">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  Passed
-                </span>
-              </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FilterPill
+                label="Audience"
+                value={audienceFocus}
+                options={FILTER_OPTIONS.audience}
+                onChange={setAudienceFocus}
+              />
+              <FilterPill
+                label="Market"
+                value={marketScope}
+                options={FILTER_OPTIONS.market}
+                onChange={setMarketScope}
+              />
+              <FilterPill
+                label="Objective"
+                value={activationObjective}
+                options={FILTER_OPTIONS.objective}
+                onChange={setActivationObjective}
+              />
+              <FilterPill
+                label="Model"
+                value={modelVersion}
+                options={FILTER_OPTIONS.model}
+                onChange={setModelVersion}
+              />
+              <button className="h-7 border border-[#1f2937] bg-[#1f2937] px-3 text-[11px] font-medium text-white hover:bg-[#374151]">
+                Export snapshot
+              </button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1440px] px-6 py-6">
-        {/* Filters */}
-        <section className="mb-6 flex flex-wrap items-center gap-2">
-          {filters.map((f) => (
-            <FilterPill
-              key={f.label}
-              label={f.label}
-              value={f.value}
-              options={f.options}
-            />
-          ))}
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              className="h-9 rounded-none border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"
-            >
-              Reset
-            </Button>
-            <Button className="h-9 rounded-none bg-zinc-950 px-3 text-sm font-medium text-white hover:bg-zinc-800">
-              Export snapshot
-            </Button>
-          </div>
-        </section>
-
-        {/* KPI cards */}
-        <section className="mb-6 grid gap-px bg-zinc-200 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="Persuadable Audience"
-            value={fullNumber.format(PERSUADABLE_AUDIENCE_COUNT)}
-            detail={fmtPct(pctOfTotal(PERSUADABLE_AUDIENCE_COUNT))}
-            caption="Customers most likely to respond to media or CRM activation."
+      <div className="mx-auto max-w-[1440px] space-y-4 px-6 py-5">
+        {/* === Audience Concentration by Region (large map) === */}
+        <CardPanel>
+          <PanelHeader
+            eyebrow="Audience by region"
+            title="Audience Concentration by Region"
+            description="Regional distribution updates based on the selected audience, market scope, activation objective, and model version."
           />
-          <MetricCard
-            label="Lookalike Seed Audience"
-            value={fullNumber.format(LOOKALIKE_SEED_AUDIENCE_COUNT)}
-            detail={fmtPct(pctOfTotal(LOOKALIKE_SEED_AUDIENCE_COUNT))}
-            caption="High-quality seed group for Meta, Google, and DV360 expansion."
-          />
-          <MetricCard
-            label="At-Risk High-Potential Audience"
-            value={fullNumber.format(AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT)}
-            detail={fmtPct(pctOfTotal(AT_RISK_HIGH_POTENTIAL_AUDIENCE_COUNT))}
-            caption="Customers worth protecting based on prior value and predicted upside, but showing weaker engagement signals. Best suited for CRM, app push, or controlled offer testing."
-          />
-          <MetricCard
-            label="Total Scored Customers"
-            value={fullNumber.format(TOTAL_SCORED_CUSTOMERS)}
-            caption="Customer records scored by the propensity and revenue models."
-          />
-        </section>
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="space-y-6">
-            {/* Executive summary */}
-            <div className="border border-zinc-200 bg-white">
-              <SectionHeader
-                eyebrow="Executive summary"
-                title="Three recommendations for paid + owned activation"
-                description="Drafted from the current model run. Talk-track ready for client review."
-              />
-              <div className="grid gap-px border-t border-zinc-200 bg-zinc-200 lg:grid-cols-3">
-                {recommendations.map((rec, i) => (
-                  <div key={rec.label} className="bg-white px-5 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[11px] tabular-nums text-zinc-400">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <p className="text-xs font-semibold uppercase tracking-[0.06em] text-zinc-700">
-                        {rec.label}
-                      </p>
+          <div className="grid gap-4 p-4 lg:grid-cols-5">
+            {/* Map */}
+            <div className="lg:col-span-3">
+              <div className="relative">
+                <ComposableMap
+                  projection="geoAlbersUsa"
+                  width={800}
+                  height={500}
+                  style={{ width: "100%", height: "auto" }}
+                >
+                  <Geographies geography={US_STATES_GEO_URL}>
+                    {({ geographies }) =>
+                      geographies.map((geo) => {
+                        const stateName = (geo.properties as { name?: string })
+                          .name;
+                        const info = stateName
+                          ? stateAudienceFor(stateName)
+                          : null;
+                        const tier = info
+                          ? tierByRegion[info.region]
+                          : ("low" as const);
+                        const highlighted = info
+                          ? isHighlighted(info.region)
+                          : true;
+                        const opacity =
+                          isHighlightActive && !highlighted ? 0.3 : 1;
+                        const fill = tierColor(tier);
+                        return (
+                          <Geography
+                            key={geo.rsmKey}
+                            geography={geo}
+                            fill={fill}
+                            fillOpacity={opacity}
+                            stroke="#ffffff"
+                            strokeWidth={0.6}
+                            style={{
+                              default: { outline: "none" },
+                              hover: {
+                                outline: "none",
+                                fill,
+                                fillOpacity: Math.min(opacity, 0.85),
+                                cursor: "pointer",
+                              },
+                              pressed: { outline: "none" },
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!info || !stateName) return;
+                              setMapTooltip({
+                                x: e.clientX,
+                                y: e.clientY,
+                                state: stateName,
+                                region: info.region,
+                                count: info.count,
+                              });
+                            }}
+                            onMouseMove={(e) => {
+                              if (!info) return;
+                              setMapTooltip((prev) =>
+                                prev
+                                  ? { ...prev, x: e.clientX, y: e.clientY }
+                                  : prev,
+                              );
+                            }}
+                            onMouseLeave={() => setMapTooltip(null)}
+                          />
+                        );
+                      })
+                    }
+                  </Geographies>
+                </ComposableMap>
+                {mapTooltip ? (
+                  <div
+                    className="pointer-events-none fixed z-50 border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[11px] shadow-sm"
+                    style={{
+                      left: mapTooltip.x + 12,
+                      top: mapTooltip.y + 12,
+                    }}
+                  >
+                    <div className="font-medium text-[#1f2937]">
+                      {mapTooltip.state}
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-zinc-700">
-                      {rec.body}
-                    </p>
+                    <div className="text-[10px] text-[#6b7280]">
+                      {mapTooltip.region} region
+                    </div>
+                    <div className="mt-0.5 tabular-nums text-[#1f2937]">
+                      {fullNumber.format(mapTooltip.count)} ·{" "}
+                      <span className="text-[10px] text-[#6b7280]">
+                        per-state allocation
+                      </span>
+                    </div>
                   </div>
+                ) : null}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-4 text-[10px] text-[#6b7280]">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="h-2 w-3"
+                    style={{ background: C.primary }}
+                  />
+                  High concentration
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="h-2 w-3"
+                    style={{ background: C.accent }}
+                  />
+                  Medium concentration
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="h-2 w-3"
+                    style={{ background: C.baseline }}
+                  />
+                  Lower concentration
+                </span>
+              </div>
+            </div>
+
+            {/* Ranked list + dynamic copy */}
+            <div className="lg:col-span-2">
+              <SectionLabel>
+                Region ranking · {audienceFocus}
+              </SectionLabel>
+              <div className="mt-2 border-t border-[#eef0f3]">
+                {regionRows.map((r, i) => {
+                  const share = (r.count / totalAudienceCount) * 100;
+                  const highlighted = isHighlighted(r.region);
+                  return (
+                    <div
+                      key={r.region}
+                      className="flex items-center gap-3 border-b border-[#eef0f3] py-1.5"
+                      style={{
+                        opacity:
+                          isHighlightActive && !highlighted ? 0.4 : 1,
+                      }}
+                    >
+                      <span className="w-3 text-[10px] tabular-nums text-[#9ca3af]">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 truncate text-[11px] font-medium text-[#1f2937]">
+                        {r.region}
+                      </span>
+                      <span className="w-16 text-right text-[11px] tabular-nums text-[#1f2937]">
+                        {fullNumber.format(r.count)}
+                      </span>
+                      <span className="w-10 text-right text-[10px] tabular-nums text-[#9ca3af]">
+                        {share.toFixed(1)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 border-t border-[#eef0f3] pt-3">
+                <p className="text-[11px] leading-5 text-[#1f2937]">
+                  {activationCopy[activationObjective]}
+                </p>
+                <p className="mt-1 text-[10px] text-[#9ca3af]">
+                  {modelVersionCopy[modelVersion]}
+                </p>
+              </div>
+            </div>
+          </div>
+          <p className="border-t border-[#eef0f3] px-4 py-2 text-[10px] text-[#9ca3af]">
+            Regional map uses mocked values for design validation. Final
+            version will be powered by fixed BigQuery queries grouped by
+            DMA/region.
+          </p>
+        </CardPanel>
+
+        {/* === Executive summary — 3-column grid === */}
+        <section className="grid gap-4 lg:grid-cols-3">
+          {/* Column 1: Audience Readiness */}
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Audience readiness"
+              title="Activation pools sized & approved"
+              description="Counts and concentration across the four canonical audiences."
+            />
+            <div className="space-y-4 p-4">
+              <PrimaryKPI
+                label="Persuadable Audience"
+                value={fullNumber.format(persuadableCount)}
+                delta={`${fmtPct(persuadablePct)} of universe`}
+                sub="Highest-priority pool for paid social and CRM activation."
+              />
+              <div className="grid grid-cols-3">
+                <MiniKPI
+                  label="Lookalike seed"
+                  value={fullNumber.format(lookalikeSeedCount)}
+                  sub={`${fmtPct(lookalikeSeedPct)} · platform expand`}
+                  dotColor={C.primary}
+                />
+                <MiniKPI
+                  label="At-risk high-potential"
+                  value={fullNumber.format(atRiskCount)}
+                  sub={`${fmtPct(atRiskPct)} · CRM controlled test`}
+                  dotColor={C.accent}
+                />
+                <MiniKPI
+                  label="Total scored"
+                  value={fullNumber.format(totalCustomers)}
+                  sub="Universe denominator"
+                  dotColor={C.baseline}
+                />
+              </div>
+              <div>
+                <SectionLabel>Top persuadable DMAs</SectionLabel>
+                <div className="mt-2 space-y-1.5">
+                  {(() => {
+                    const rows = (liveDmas ?? dmaData).slice(0, 5);
+                    const maxC =
+                      Math.max(...rows.map((d) => d.customers)) || 1;
+                    return rows.map((d) => (
+                      <BarRow
+                        key={d.dma}
+                        label={d.dma}
+                        value={fullNumber.format(d.customers)}
+                        share={(d.customers / maxC) * 100}
+                      />
+                    ));
+                  })()}
+                </div>
+              </div>
+              <div>
+                <SectionLabel>Audience composition</SectionLabel>
+                <div className="mt-2 h-32">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={audienceData}
+                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid vertical={false} stroke={C.borderSoft} />
+                      <XAxis
+                        dataKey="name"
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => compactNumber.format(v as number)}
+                        width={36}
+                      />
+                      <Tooltip
+                        cursor={{ fill: C.bgPanel }}
+                        content={
+                          <ChartTooltip format={(v) => fullNumber.format(v)} />
+                        }
+                      />
+                      <Bar dataKey="customers" name="Customers">
+                        {audienceData.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </CardPanel>
+
+          {/* Column 2: Model Performance */}
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Model performance"
+              title="Lift, gain, and calibration"
+              description="How much better the model is than random selection."
+            />
+            <div className="space-y-4 p-4">
+              <PrimaryKPI
+                label="Lift @ Top Decile"
+                value={`${liftAtTopDecile.toFixed(2)}×`}
+                delta={`vs ${fmtPct(POPULATION_BASELINE_RATE * 100, 1)} avg`}
+                sub="D1 conversion rate over the population baseline."
+              />
+              <div className="grid grid-cols-3">
+                <MiniKPI
+                  label="Top 30% capture"
+                  value={`${top30Capture.toFixed(1)}%`}
+                  sub="of conversions"
+                  dotColor={C.primary}
+                />
+                <MiniKPI
+                  label="Top 50% capture"
+                  value={`${top50Capture.toFixed(1)}%`}
+                  sub="of conversions"
+                  dotColor={C.primary}
+                />
+                <MiniKPI
+                  label="Calibration"
+                  value="Aligned"
+                  sub="predicted ≈ actual"
+                  dotColor={C.positive}
+                />
+              </div>
+              <div>
+                <SectionLabel>Cumulative gain</SectionLabel>
+                <div className="mt-2 h-40">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={cumulativeGainData}
+                      margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid vertical={false} stroke={C.borderSoft} />
+                      <XAxis
+                        dataKey="population"
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => `${v}%`}
+                      />
+                      <YAxis
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                        domain={[0, 100]}
+                        tickFormatter={(v) => `${v}%`}
+                        width={36}
+                      />
+                      <Tooltip
+                        cursor={{ stroke: C.border, strokeWidth: 1 }}
+                        content={
+                          <ChartTooltip format={(v) => `${v.toFixed(1)}%`} />
+                        }
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="model"
+                        name="Model"
+                        stroke={C.primary}
+                        strokeWidth={2}
+                        dot={{ r: 2.5, fill: C.primary, strokeWidth: 0 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="random"
+                        name="Random"
+                        stroke={C.baseline}
+                        strokeWidth={1.5}
+                        strokeDasharray="4 3"
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-1 flex items-center gap-3 text-[10px] text-[#6b7280]">
+                  <span className="flex items-center gap-1">
+                    <span
+                      className="h-0.5 w-3"
+                      style={{ background: C.primary }}
+                    />
+                    Model-ranked
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <DashedSwatch color={C.baseline} />
+                    Random
+                  </span>
+                </div>
+              </div>
+              <div>
+                <SectionLabel>Decile lift (vs 8.7% baseline)</SectionLabel>
+                <div className="mt-2 h-24">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={decileConversionData}
+                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid vertical={false} stroke={C.borderSoft} />
+                      <XAxis
+                        dataKey="decile"
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                        domain={[0, 0.2]}
+                        tickFormatter={(v) =>
+                          `${Math.round((v as number) * 100)}%`
+                        }
+                        width={36}
+                      />
+                      <Tooltip
+                        cursor={{ fill: C.bgPanel }}
+                        content={
+                          <ChartTooltip format={(v) => fmtPct(v * 100, 1)} />
+                        }
+                      />
+                      <ReferenceLine
+                        y={POPULATION_BASELINE_RATE}
+                        stroke={C.accent}
+                        strokeDasharray="4 3"
+                      />
+                      <Bar
+                        dataKey="rate"
+                        name="Conversion rate"
+                        fill={C.primary}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </CardPanel>
+
+          {/* Column 3: Activation & Monitoring */}
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Activation & monitoring"
+              title="Recommendations & stability"
+              description="Audiences ready to deploy and ongoing model health."
+            />
+            <div className="space-y-4 p-4">
+              <PrimaryKPI
+                label="Activation audiences ready"
+                value={`${recommendedAudiences.length}`}
+                delta="Persuadable · Lookalike · At-risk"
+                sub="All three approved for deployment this cycle."
+              />
+              <div className="grid grid-cols-3">
+                <MiniKPI
+                  label="Drift status"
+                  value={`${psiCounts.Review || 0} review`}
+                  sub={`${psiCounts.Watch || 0} watch · ${psiCounts.Stable || 0} stable`}
+                  dotColor={C.critical}
+                />
+                <MiniKPI
+                  label="Label drift"
+                  value={`${labelDriftDelta >= 0 ? "+" : ""}${labelDriftDelta.toFixed(1)} pts`}
+                  sub="vs Jan baseline"
+                  dotColor={C.accent}
+                />
+                <MiniKPI
+                  label="Last refresh"
+                  value="09 May"
+                  sub="Daily scoring run"
+                  dotColor={C.positive}
+                />
+              </div>
+              <div>
+                <SectionLabel>Recommended activation audiences</SectionLabel>
+                <div className="mt-2 divide-y divide-[#eef0f3] border-y border-[#eef0f3]">
+                  {recommendedAudiences.map((row) => (
+                    <div
+                      key={row.name}
+                      className="flex items-center justify-between gap-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[11px] font-medium text-[#1f2937]">
+                          {row.name}
+                        </p>
+                        <p className="text-[10px] text-[#9ca3af]">
+                          {row.channel}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[11px] tabular-nums text-[#4b5563]">
+                        {fullNumber.format(row.size)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <SectionLabel>Label drift trend</SectionLabel>
+                <div className="mt-2 h-32">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={labelDriftData}
+                      margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid vertical={false} stroke={C.borderSoft} />
+                      <XAxis
+                        dataKey="month"
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke={C.textSubtle}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                        domain={[6, 10]}
+                        tickFormatter={(v) => `${v}%`}
+                        width={36}
+                      />
+                      <Tooltip
+                        cursor={{ stroke: C.border, strokeWidth: 1 }}
+                        content={
+                          <ChartTooltip format={(v) => `${v.toFixed(1)}%`} />
+                        }
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="observed"
+                        name="Observed"
+                        stroke={C.accent}
+                        strokeWidth={2}
+                        dot={{ r: 2.5, fill: C.accent, strokeWidth: 0 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="baseline"
+                        name="Baseline"
+                        stroke={C.baseline}
+                        strokeWidth={1.5}
+                        strokeDasharray="4 3"
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-1 flex items-center gap-3 text-[10px] text-[#6b7280]">
+                  <span className="flex items-center gap-1">
+                    <span
+                      className="h-0.5 w-3"
+                      style={{ background: C.accent }}
+                    />
+                    Observed
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <DashedSwatch color={C.baseline} />
+                    Baseline (9.0%)
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardPanel>
+        </section>
+
+        {/* === Analytical detail row === */}
+        <section className="grid gap-4 lg:grid-cols-2">
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Calibration"
+              title="Actual vs. Predicted Conversion Rate"
+              description="Predicted probability decile vs. observed conversion (D1 = highest)."
+            />
+            <div className="px-3 pb-3 pt-3">
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={validationData}
+                    margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid vertical={false} stroke={C.borderSoft} />
+                    <XAxis
+                      dataKey="decile"
+                      stroke={C.textSubtle}
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke={C.textSubtle}
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={false}
+                      domain={[0, 0.2]}
+                      tickFormatter={(v) =>
+                        `${Math.round((v as number) * 100)}%`
+                      }
+                      width={36}
+                    />
+                    <Tooltip
+                      cursor={{ stroke: C.border, strokeWidth: 1 }}
+                      content={
+                        <ChartTooltip format={(v) => fmtPct(v * 100, 1)} />
+                      }
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="predicted"
+                      name="Predicted"
+                      stroke={C.primary}
+                      strokeWidth={2}
+                      dot={{ r: 2.5, fill: C.primary, strokeWidth: 0 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="actual"
+                      name="Actual"
+                      stroke={C.accent}
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                      dot={{ r: 2, fill: C.accent, strokeWidth: 0 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-2 flex items-center gap-3 px-2 text-[10px] text-[#6b7280]">
+                <span className="flex items-center gap-1">
+                  <span
+                    className="h-0.5 w-3"
+                    style={{ background: C.primary }}
+                  />
+                  Predicted
+                </span>
+                <span className="flex items-center gap-1">
+                  <DashedSwatch color={C.accent} />
+                  Actual
+                </span>
+              </div>
+              <p className="mt-2 px-2 text-[10px] leading-4 text-[#9ca3af]">
+                Higher-scored deciles should show higher observed conversion.
+                Close alignment indicates the model is directionally calibrated.
+              </p>
+            </div>
+          </CardPanel>
+
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Drift"
+              title="Feature drift / PSI"
+              description="Population Stability Index per model input vs. training baseline."
+            />
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-[#e5e7eb] hover:bg-transparent">
+                  <TableHead className="h-8 px-4 text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Feature
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    PSI
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Status
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {psiData.map((row) => (
+                  <TableRow
+                    key={row.feature}
+                    className="border-b border-[#eef0f3] align-top last:border-b-0 hover:bg-[#fafbfc]"
+                  >
+                    <TableCell className="px-4 py-2 text-[11px] font-medium text-[#1f2937]">
+                      {row.feature}
+                      <div className="text-[10px] leading-4 text-[#9ca3af]">
+                        {row.interpretation}
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-4 py-2 text-right text-[11px] font-medium tabular-nums text-[#1f2937]">
+                      {row.psi.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="px-4 py-2">
+                      <StatusBadge status={psiStatus(row.psi)} />
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-            </div>
+              </TableBody>
+            </Table>
+            <p className="border-t border-[#eef0f3] px-4 py-2 text-[10px] text-[#9ca3af]">
+              Stable &lt; 0.10 · Watch 0.10–0.20 · Review ≥ 0.20
+            </p>
+          </CardPanel>
+        </section>
 
-            {/* Charts row */}
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="border border-zinc-200 bg-white">
-                <SectionHeader
-                  title="Audience composition"
-                  description="Validated counts across the four approved customer views."
-                  action={
-                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-zinc-400">
-                      Customers
-                    </span>
-                  }
-                />
-                <div className="border-t border-zinc-200 px-3 pt-3 pb-2">
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={audienceData}
-                        margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                      >
-                        <CartesianGrid
-                          vertical={false}
-                          stroke="#f1f1f3"
-                        />
-                        <XAxis
-                          dataKey="name"
-                          stroke="#a1a1aa"
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          stroke="#a1a1aa"
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(v) => compactNumber.format(v as number)}
-                          width={40}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "#fafafa" }}
-                          content={
-                            <ChartTooltipBox
-                              format={(v) => fullNumber.format(v)}
-                            />
-                          }
-                        />
-                        <Bar dataKey="customers" name="Customers">
-                          {audienceData.map((entry) => (
-                            <Cell
-                              key={entry.name}
-                              fill={entry.accent ? "#0a0a0a" : "#d4d4d8"}
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-2 flex items-center gap-4 px-2 text-[11px] text-zinc-500">
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 bg-zinc-950" />
-                      Activation audiences
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 bg-zinc-300" />
-                      Source universes
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border border-zinc-200 bg-white">
-                <SectionHeader
-                  eyebrow="Model validation"
-                  title="Actual vs. Predicted Conversion Rate"
-                  description="Predicted probability decile vs. observed conversion rate (D1 = highest)."
-                  action={
-                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-zinc-400">
-                      Conversion rate
-                    </span>
-                  }
-                />
-                <div className="border-t border-zinc-200 px-3 pt-3 pb-2">
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={validationData}
-                        margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
-                      >
-                        <CartesianGrid vertical={false} stroke="#f1f1f3" />
-                        <XAxis
-                          dataKey="decile"
-                          stroke="#a1a1aa"
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          stroke="#a1a1aa"
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                          domain={[0, 0.2]}
-                          tickFormatter={(value) =>
-                            `${Math.round((value as number) * 100)}%`
-                          }
-                          width={40}
-                        />
-                        <Tooltip
-                          cursor={{ stroke: "#e4e4e7", strokeWidth: 1 }}
-                          content={
-                            <ChartTooltipBox
-                              format={(v) => fmtPct(v * 100, 1)}
-                            />
-                          }
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="predicted"
-                          name="Predicted"
-                          stroke="#0a0a0a"
-                          strokeWidth={1.75}
-                          dot={{ r: 2.5, fill: "#0a0a0a", strokeWidth: 0 }}
-                          activeDot={{ r: 4, fill: "#0a0a0a", strokeWidth: 0 }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="actual"
-                          name="Actual"
-                          stroke="#71717a"
-                          strokeWidth={1.5}
-                          strokeDasharray="4 3"
-                          dot={{ r: 2.5, fill: "#71717a", strokeWidth: 0 }}
-                          activeDot={{ r: 4, fill: "#71717a", strokeWidth: 0 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-2 flex items-center gap-4 px-2 text-[11px] text-zinc-500">
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-0.5 w-3 bg-zinc-950" />
-                      Predicted
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <svg
-                        aria-hidden
-                        viewBox="0 0 12 2"
-                        className="h-0.5 w-3"
-                      >
-                        <line
-                          x1="0"
-                          y1="1"
-                          x2="12"
-                          y2="1"
-                          stroke="#71717a"
-                          strokeWidth="2"
-                          strokeDasharray="4 3"
-                        />
-                      </svg>
-                      Actual
-                    </span>
-                  </div>
-                  <p className="mt-2 px-2 text-[11px] leading-4 text-zinc-500">
-                    Higher-scored deciles should show higher observed
-                    conversion rates. Close alignment between predicted and
-                    actual rates indicates the model is directionally
-                    calibrated.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Top DMAs */}
-            <div className="border border-zinc-200 bg-white">
-              <SectionHeader
-                eyebrow="Markets"
-                title="Top persuadable DMAs"
-                description="Priority markets by persuadable customer volume."
-                action={
-                  <button className="text-xs font-medium text-zinc-600 hover:text-zinc-900">
-                    View all 210 →
-                  </button>
-                }
-              />
-              <div className="border-t border-zinc-200">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b border-zinc-200 hover:bg-transparent">
-                      <TableHead className="h-9 px-5 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        DMA
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Persuadable customers
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Share of persuadable
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Avg. score
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {dmaData.map((row) => (
-                      <TableRow
-                        key={row.dma}
-                        className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50"
-                      >
-                        <TableCell className="px-5 py-3 text-sm font-medium text-zinc-900">
-                          {row.dma}
-                        </TableCell>
-                        <TableCell className="px-5 py-3 text-right font-mono text-sm tabular-nums text-zinc-700">
-                          {fullNumber.format(row.customers)}
-                        </TableCell>
-                        <TableCell className="px-5 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <div className="h-1 w-20 bg-zinc-100">
-                              <div
-                                className="h-1 bg-zinc-900"
-                                style={{ width: `${row.share * 4}%` }}
-                              />
-                            </div>
-                            <span className="w-12 font-mono text-sm tabular-nums text-zinc-700">
-                              {fmtPct(row.share, 1)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-5 py-3 text-right font-mono text-sm tabular-nums text-zinc-700">
-                          {row.avgScore.toFixed(2)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            {/* HVC segments */}
-            <div className="border border-zinc-200 bg-white">
-              <SectionHeader
-                eyebrow="Value tiers"
-                title="High-value customer segments"
-                description="Revenue and behavior summary by segment."
-              />
-              <div className="border-t border-zinc-200">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b border-zinc-200 hover:bg-transparent">
-                      <TableHead className="h-9 px-5 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Segment
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Customers
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Annual revenue
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Visits / yr
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Avg check
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {hvcSegments.map((row) => (
+        {/* === Revenue segments + Agent === */}
+        <section className="grid gap-4 lg:grid-cols-2">
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Value tiers"
+              title="High-value customer segments"
+              description="Revenue and behavior summary by segment."
+            />
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-[#e5e7eb] hover:bg-transparent">
+                  <TableHead className="h-8 px-4 text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Segment
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Customers
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Revenue
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Avg check
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(() => {
+                  // Normalize live + fallback to a single shape for rendering.
+                  const normalized = liveHvc
+                    ? liveHvc.map((r) => ({
+                        segment: r.segment,
+                        customers: r.customers,
+                        revenue: r.totalLifetimeRevenue,
+                        avgCheck: r.avgCheck,
+                      }))
+                    : hvcSegments.map((r) => ({
+                        segment: r.segment,
+                        customers: r.customers,
+                        revenue: r.revenue,
+                        avgCheck: r.avgCheck,
+                      }));
+                  const totalForShare =
+                    normalized.reduce((s, r) => s + r.customers, 0) ||
+                    totalCustomers;
+                  return normalized.map((row) => {
+                    const share = totalForShare
+                      ? (row.customers / totalForShare) * 100
+                      : 0;
+                    return (
                       <TableRow
                         key={row.segment}
-                        className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50"
+                        className="border-b border-[#eef0f3] last:border-b-0 hover:bg-[#fafbfc]"
                       >
-                        <TableCell className="px-5 py-3 text-sm font-medium text-zinc-900">
+                        <TableCell className="px-4 py-2 text-[11px] font-medium text-[#1f2937]">
                           {row.segment}
-                          <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-zinc-400">
-                            {fmtPct(row.share, 1)} of universe
+                          <div className="text-[10px] text-[#9ca3af]">
+                            {fmtPct(share, 1)} of universe
                           </div>
                         </TableCell>
-                        <TableCell className="px-5 py-3 text-right font-mono text-sm tabular-nums text-zinc-700">
+                        <TableCell className="px-4 py-2 text-right text-[11px] tabular-nums text-[#4b5563]">
                           {fullNumber.format(row.customers)}
                         </TableCell>
-                        <TableCell className="px-5 py-3 text-right font-mono text-sm tabular-nums text-zinc-900">
+                        <TableCell className="px-4 py-2 text-right text-[11px] font-medium tabular-nums text-[#1f2937]">
                           {compactCurrency.format(row.revenue)}
                         </TableCell>
-                        <TableCell className="px-5 py-3 text-right font-mono text-sm tabular-nums text-zinc-700">
-                          {row.visits.toFixed(1)}
-                        </TableCell>
-                        <TableCell className="px-5 py-3 text-right font-mono text-sm tabular-nums text-zinc-700">
-                          ${row.avgCheck}
+                        <TableCell className="px-4 py-2 text-right text-[11px] tabular-nums text-[#4b5563]">
+                          ${Math.round(row.avgCheck)}
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
+                    );
+                  });
+                })()}
+              </TableBody>
+            </Table>
+          </CardPanel>
 
-            {/* Recommended audiences */}
-            <div className="border border-zinc-200 bg-white">
-              <SectionHeader
-                eyebrow="Activation"
-                title="Recommended activation audiences"
-                description="Suggested audiences for immediate testing and media deployment."
-              />
-              <div className="border-t border-zinc-200">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b border-zinc-200 hover:bg-transparent">
-                      <TableHead className="h-9 px-5 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Audience
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Size
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Channel
-                      </TableHead>
-                      <TableHead className="h-9 px-5 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        Rationale
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recommendedAudiences.map((row) => (
-                      <TableRow
-                        key={row.name}
-                        className="border-b border-zinc-100 align-top last:border-b-0 hover:bg-zinc-50"
-                      >
-                        <TableCell className="px-5 py-3 text-sm font-medium text-zinc-900">
-                          {row.name}
-                        </TableCell>
-                        <TableCell className="px-5 py-3 text-right font-mono text-sm tabular-nums text-zinc-700">
-                          {fullNumber.format(row.size)}
-                        </TableCell>
-                        <TableCell className="px-5 py-3 text-sm text-zinc-700">
-                          {row.channel}
-                        </TableCell>
-                        <TableCell className="px-5 py-3 text-sm leading-6 text-zinc-600">
-                          {row.rationale}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          </section>
-
-          {/* Right rail */}
-          <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-            <div className="border border-zinc-200 bg-white">
-              <SectionHeader
-                eyebrow="Agent"
-                title="Ask the analytics agent"
-                description="Natural-language Q&A grounded in the four approved BigQuery views."
-              />
-              <div className="space-y-4 border-t border-zinc-200 px-5 py-4">
-                <div>
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                    Suggested prompts
-                  </p>
-                  <div className="space-y-1">
-                    {prompts.map((p) => (
-                      <button
-                        key={p}
-                        className="block w-full border border-zinc-200 bg-white px-3 py-2 text-left text-xs leading-5 text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-50"
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="border border-zinc-200 bg-zinc-50">
-                  <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                      Example response
-                    </span>
-                    <span className="font-mono text-[10px] tabular-nums text-zinc-400">
-                      mock · 1.2s
-                    </span>
-                  </div>
-                  <div className="px-3 py-3">
-                    <p className="text-xs leading-5 text-zinc-700">
-                      The Persuadable Audience contains{" "}
-                      <span className="font-mono tabular-nums text-zinc-900">
-                        20,036
-                      </span>{" "}
-                      customers (
-                      <span className="font-mono tabular-nums text-zinc-900">
-                        10.02%
-                      </span>{" "}
-                      of Total Scored Customers). It balances model confidence
-                      with reachable scale, making it the strongest immediate
-                      activation pool.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Textarea
-                    placeholder="Ask about audiences, DMAs, revenue segments, or activation planning…"
-                    className="min-h-24 resize-none rounded-none border-zinc-200 bg-white text-sm text-zinc-950 placeholder:text-zinc-400 focus-visible:ring-0 focus-visible:border-zinc-400"
-                  />
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-mono text-[10px] tabular-nums text-zinc-400">
-                      Wires to /api/agent/chat
-                    </p>
-                    <Button className="h-8 rounded-none bg-zinc-950 px-3 text-xs font-medium text-white hover:bg-zinc-800">
-                      Run question
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="border border-zinc-200 bg-white">
-              <SectionHeader
-                eyebrow="Methodology"
-                title="Scope &amp; assumptions"
-              />
-              <ol className="space-y-0 border-t border-zinc-200 text-xs">
-                {[
-                  "Uses four approved BigQuery views: customer scores, HVC revenue segments, persuadable audience, and lookalike seed audience.",
-                  "Percentages use the current customer universe (200,000) as the default denominator unless otherwise stated.",
-                  "At-risk high-potential customers are defined conceptually as customers with prior value, medium-to-high modeled upside, weaker recent engagement, and not already in the strongest loyalist or lookalike group. Sized for a controlled CRM test, not blanket discounting.",
-                  "All chart and table values shown here are mocked for design validation.",
-                  "Final KPI and chart routes will be backed by fixed SQL against the approved views.",
-                ].map((item, i) => (
-                  <li
-                    key={i}
-                    className="flex gap-3 border-b border-zinc-100 px-5 py-3 last:border-b-0"
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Analytics agent"
+              title="Ask Tom"
+            />
+            <div className="space-y-3 p-4">
+              <div className="space-y-1">
+                {prompts.map((p) => (
+                  <button
+                    key={p}
+                    className="block w-full border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-left text-[11px] text-[#4b5563] hover:border-[#9ca3af] hover:bg-[#fafbfc]"
                   >
-                    <span className="font-mono text-[11px] tabular-nums text-zinc-400">
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <span className="leading-5 text-zinc-700">{item}</span>
-                  </li>
+                    {p}
+                  </button>
                 ))}
-              </ol>
+              </div>
+              <div className="space-y-2">
+                <Textarea
+                  placeholder="Ask about audiences, DMAs, revenue segments, or activation planning…"
+                  className="min-h-20 resize-none rounded-none border-[#e5e7eb] bg-white text-xs text-[#1f2937] placeholder:text-[#9ca3af] focus-visible:ring-0 focus-visible:border-[#1f2937]"
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] text-[#9ca3af]">
+                    Wires to /api/agent/chat
+                  </p>
+                  <button className="h-7 border border-[#1f2937] bg-[#1f2937] px-3 text-[11px] font-medium text-white hover:bg-[#374151]">
+                    Answer
+                  </button>
+                </div>
+              </div>
             </div>
-          </aside>
-        </div>
+          </CardPanel>
+        </section>
 
-        <footer className="mt-10 border-t border-zinc-200 pt-4 pb-8 text-[11px] text-zinc-500">
+        <footer className="border-t border-[#e5e7eb] pt-4 pb-2 text-[10px] text-[#9ca3af]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span>
               Internal demo for client review — values are validated where
               labeled and mocked elsewhere.
             </span>
-            <span className="font-mono tabular-nums">
-              tombras-demo · fogo_churrasgo · v2
+            <span className="tabular-nums">
+              tombras-demo · fogo_churrasgo · v2 · Fogo Propensity Analytics
+              Agent
             </span>
           </div>
         </footer>
