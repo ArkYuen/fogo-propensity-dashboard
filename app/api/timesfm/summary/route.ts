@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 
 import { getBigQuery } from "@/lib/bigquery";
+import { timesfmTable } from "@/lib/timesfm-config";
 
 export const runtime = "nodejs";
 
@@ -23,15 +24,8 @@ const FALLBACK = {
 };
 
 const SQL = `
-  SELECT
-    current_total_daily_budget,
-    recommended_total_daily_budget,
-    forecasted_total_conversions_14d,
-    avg_portfolio_forecasted_cpa,
-    channels_to_increase,
-    channels_to_reduce,
-    high_risk_channels
-  FROM \`tombras-demo.timesfm_staging.portfolio_budget_summary\`
+  SELECT *
+  FROM ${timesfmTable("portfolio_budget_summary")}
   LIMIT 1
 `;
 

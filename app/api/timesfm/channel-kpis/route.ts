@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 
 import { getBigQuery } from "@/lib/bigquery";
+import { timesfmTable } from "@/lib/timesfm-config";
 
 export const runtime = "nodejs";
 
@@ -58,16 +59,9 @@ function buildFallback(): ChannelKpiRow[] {
 }
 
 const SQL = `
-  SELECT
-    date,
-    channel,
-    spend,
-    conversions,
-    cpa,
-    roas,
-    competitor_pressure
-  FROM \`tombras-demo.timesfm_staging.channel_daily_kpis\`
-  ORDER BY date ASC, channel ASC
+  SELECT *
+  FROM ${timesfmTable("channel_daily_kpis")}
+  ORDER BY date, channel
 `;
 
 // BigQuery DATE columns come back as { value: "YYYY-MM-DD" } objects via

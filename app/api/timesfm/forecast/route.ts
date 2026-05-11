@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 
 import { getBigQuery } from "@/lib/bigquery";
+import { timesfmTable } from "@/lib/timesfm-config";
 
 export const runtime = "nodejs";
 
@@ -64,8 +65,8 @@ function buildFallback(): ForecastRow[] {
 
 const SQL = `
   SELECT *
-  FROM \`tombras-demo.timesfm_staging.dashboard_actuals_vs_forecast\`
-  ORDER BY date ASC, channel ASC
+  FROM ${timesfmTable("dashboard_actuals_vs_forecast")}
+  ORDER BY date, channel
 `;
 
 function dateToString(v: unknown): string {

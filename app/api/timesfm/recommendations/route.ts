@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 
 import { getBigQuery } from "@/lib/bigquery";
+import { timesfmTable } from "@/lib/timesfm-config";
 
 export const runtime = "nodejs";
 
@@ -83,18 +84,9 @@ const FALLBACK: RecommendationRow[] = [
 ];
 
 const SQL = `
-  SELECT
-    channel,
-    recent_cpa,
-    avg_forecasted_cpa_14d,
-    forecasted_cpa_change_pct,
-    recent_avg_daily_spend,
-    recommended_new_daily_budget,
-    recommended_budget_shift_pct,
-    risk_level,
-    recommendation
-  FROM \`tombras-demo.timesfm_staging.channel_budget_recommendations\`
-  ORDER BY recommended_budget_shift_pct DESC
+  SELECT *
+  FROM ${timesfmTable("channel_budget_recommendations")}
+  ORDER BY forecast_efficiency_rank, channel
 `;
 
 const num = (v: unknown) => (v == null ? 0 : Number(v));

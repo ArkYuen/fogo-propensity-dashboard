@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 
 import { getBigQuery } from "@/lib/bigquery";
+import { timesfmTable } from "@/lib/timesfm-config";
 
 export const runtime = "nodejs";
 
@@ -70,13 +71,9 @@ const FALLBACK: ExplainerRow[] = [
 ];
 
 const SQL = `
-  SELECT
-    channel,
-    executive_summary,
-    explanation,
-    recommendation,
-    risk_level
-  FROM \`tombras-demo.timesfm_staging.budget_reallocation_explainer\`
+  SELECT *
+  FROM ${timesfmTable("budget_reallocation_explainer")}
+  ORDER BY channel
 `;
 
 export async function GET() {
