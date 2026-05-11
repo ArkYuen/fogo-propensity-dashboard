@@ -635,6 +635,144 @@ function ChartTooltip({
 }
 
 // ---------------------------------------------------------------------------
+// Activation Loop — types, fallbacks, and static phase content
+// ---------------------------------------------------------------------------
+
+type ActivationOperationRow = {
+  audience: string;
+  platform: string;
+  sent: number | null;
+  accepted: number | null;
+  match_rate: number | null; // stored as ratio (0–1)
+  lift: number | null; // stored as ratio (0–1)
+  incremental_revenue: number | null; // dollars
+  status: string;
+};
+
+type RetrainingSignalRow = {
+  title: string;
+  copy: string;
+  status_label: string;
+  eligible: boolean;
+};
+
+type ActivationLoopResp = {
+  operations: ActivationOperationRow[];
+  retraining_signal: RetrainingSignalRow;
+};
+
+const ACTIVATION_OPERATIONS_FALLBACK: ActivationOperationRow[] = [
+  {
+    audience: "Persuadable diners — top 5 DMAs",
+    platform: "Meta Ads",
+    sent: 15340,
+    accepted: 14210,
+    match_rate: 0.926,
+    lift: 0.32,
+    incremental_revenue: 57500,
+    status: "Accepted",
+  },
+  {
+    audience: "Lookalike seed — premium loyalists",
+    platform: "Google Ads / DV360",
+    sent: 20267,
+    accepted: 18890,
+    match_rate: 0.932,
+    lift: null,
+    incremental_revenue: null,
+    status: "Accepted",
+  },
+  {
+    audience: "At-risk high-potential — controlled CRM",
+    platform: "Braze / Salesforce Marketing Cloud",
+    sent: 18750,
+    accepted: null,
+    match_rate: null,
+    lift: 0.316,
+    incremental_revenue: 23300,
+    status: "Queued",
+  },
+];
+
+const RETRAINING_SIGNAL_FALLBACK: RetrainingSignalRow = {
+  title: "Retraining Signal",
+  copy:
+    "Activation measurement shows positive preliminary lift across paid media and CRM tests. Once enough runs accumulate, exposed/holdout outcomes can be written back to BigQuery as labels for model recalibration or retraining.",
+  status_label: "Eligible for retraining signal",
+  eligible: true,
+};
+
+const ACTIVATION_PHASES: {
+  phase: number;
+  title: string;
+  metric: string;
+  statusLabel: string;
+  statusColor: string;
+  description: string;
+}[] = [
+  {
+    phase: 1,
+    title: "BigQuery Views + Agent",
+    metric: "4 approved views",
+    statusLabel: "Complete",
+    statusColor: "#59a14f", // C.positive
+    description:
+      "Scored customer, HVC, persuadable, and lookalike views power the dashboard and Ask Tom agent.",
+  },
+  {
+    phase: 2,
+    title: "Audience Exports",
+    metric: "3 active runs",
+    statusLabel: "Ready",
+    statusColor: "#4e79a7", // C.primary
+    description:
+      "Persuadable, lookalike seed, and at-risk audiences packaged for activation.",
+  },
+  {
+    phase: 3,
+    title: "Platform Write-Back",
+    metric: "2 accepted / 1 queued",
+    statusLabel: "In progress",
+    statusColor: "#f28e2c", // C.accent
+    description:
+      "Audiences written back to Meta, Google/DV360, and CRM destinations.",
+  },
+  {
+    phase: 4,
+    title: "Lift + Retraining Loop",
+    metric: "31–32% preliminary lift",
+    statusLabel: "Monitoring",
+    statusColor: "#edc949", // C.warning
+    description:
+      "Holdout results and incremental revenue create retraining signals.",
+  },
+];
+
+// Status pill color for the activation operations table.
+function operationStatusColor(status: string): string {
+  const v = status.toLowerCase();
+  if (v.includes("accept")) return "#59a14f"; // positive
+  if (v.includes("queue") || v.includes("pending")) return "#edc949"; // warning
+  if (v.includes("fail") || v.includes("reject")) return "#e15759"; // critical
+  return "#6b7280"; // neutral
+}
+
+const pctRatio = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+const compactCurrencyShort = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+const fmtMaybe = <T,>(v: T | null, fmt: (n: T) => string) =>
+  v == null ? "—" : fmt(v);
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -670,6 +808,16 @@ export default function Home() {
   const [bqStatus, setBqStatus] = useState<
     "loading" | "connected" | "fallback"
   >("loading");
+
+  // Activation Loop section (operations + retraining signal). Always
+  // renders with the user-specified demo content; replaced by route
+  // data when the fetch succeeds.
+  const [activationOps, setActivationOps] = useState<
+    ActivationOperationRow[]
+  >(ACTIVATION_OPERATIONS_FALLBACK);
+  const [retrainingSignal, setRetrainingSignal] = useState<RetrainingSignalRow>(
+    RETRAINING_SIGNAL_FALLBACK,
+  );
 
   // Fetch summary + DMAs + HVC once on mount.
   useEffect(() => {
@@ -715,6 +863,28 @@ export default function Home() {
       cancelled = true;
     };
   }, [audienceFocus]);
+
+  // Fetch the Activation Loop summary once on mount. Falls back to the
+  // demo values already set in state if the route is offline or the
+  // views aren't created yet.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/dashboard/activation-loop", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((res: { data?: ActivationLoopResp }) => {
+        if (cancelled || !res?.data) return;
+        if (Array.isArray(res.data.operations) && res.data.operations.length) {
+          setActivationOps(res.data.operations);
+        }
+        if (res.data.retraining_signal) {
+          setRetrainingSignal(res.data.retraining_signal);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // === Live-or-fallback computed values ===
   const totalCustomers =
@@ -823,14 +993,18 @@ export default function Home() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <SectionLabel>
-                Fogo de Chão · Customer propensity
+                Fogo de Chão · ChurrasGO User Propensity
               </SectionLabel>
               <h1 className="mt-1 text-[20px] font-semibold leading-tight tracking-tight text-[#1f2937]">
-                Customer Propensity &amp; Activation
+                Propensity Scores for App Users Predicting &ldquo;High
+                Value&rdquo; Audiences
               </h1>
               <p className="mt-0.5 max-w-2xl text-xs leading-5 text-[#6b7280]">
-                Audience sizing, high-value customer profiling, and media
-                activation planning for the propensity model demo.
+                Two XGBoost propensity models. One model finds guests who
+                already behave like high-value customers. The other finds
+                customers who are most worth activating through media or
+                CRM. Together, the scores help us decide who to protect, who
+                to expand from, and who to target next.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -1660,6 +1834,160 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          </CardPanel>
+        </section>
+
+        {/* === Activation Loop ============================================ */}
+        <section className="space-y-3">
+          <div>
+            <SectionLabel>Phase loop</SectionLabel>
+            <h2 className="mt-1 text-[16px] font-semibold leading-tight tracking-tight text-[#1f2937]">
+              Activation Loop
+            </h2>
+            <p className="mt-0.5 max-w-2xl text-[11px] leading-4 text-[#6b7280]">
+              How scored audiences move from BigQuery into media and CRM
+              activation, then back into measurement and retraining signals.
+            </p>
+          </div>
+
+          {/* Four phase cards */}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {ACTIVATION_PHASES.map((phase) => (
+              <CardPanel key={phase.phase}>
+                <div className="p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9ca3af]">
+                        Phase {phase.phase}
+                      </p>
+                      <p className="mt-0.5 text-[12px] font-semibold leading-tight text-[#1f2937]">
+                        {phase.title}
+                      </p>
+                    </div>
+                    <StatusBadge
+                      status={{
+                        label: phase.statusLabel,
+                        color: phase.statusColor,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-3 text-[16px] font-semibold leading-none tabular-nums text-[#1f2937]">
+                    {phase.metric}
+                  </p>
+                  <p className="mt-2 text-[11px] leading-4 text-[#6b7280]">
+                    {phase.description}
+                  </p>
+                </div>
+              </CardPanel>
+            ))}
+          </div>
+
+          {/* Activation Operations table */}
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Operations"
+              title="Activation Operations"
+              description="Per-audience write-back performance across the activated destinations this cycle."
+            />
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-[#e5e7eb] hover:bg-transparent">
+                  <TableHead className="h-8 px-4 text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Audience
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Platform
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Sent
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Accepted
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Match Rate
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Lift
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Incr. Revenue
+                  </TableHead>
+                  <TableHead className="h-8 px-4 text-[10px] font-semibold uppercase tracking-wide text-[#6b7280]">
+                    Status
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activationOps.map((row) => (
+                  <TableRow
+                    key={`${row.audience}-${row.platform}`}
+                    className="border-b border-[#eef0f3] last:border-b-0 hover:bg-[#fafbfc]"
+                  >
+                    <TableCell className="px-4 py-2 text-[11px] font-medium text-[#1f2937]">
+                      {row.audience}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 text-[11px] text-[#4b5563]">
+                      {row.platform}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 text-right text-[11px] tabular-nums text-[#4b5563]">
+                      {fmtMaybe(row.sent, (n) => fullNumber.format(n))}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 text-right text-[11px] tabular-nums text-[#4b5563]">
+                      {fmtMaybe(row.accepted, (n) => fullNumber.format(n))}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 text-right text-[11px] tabular-nums text-[#1f2937]">
+                      {fmtMaybe(row.match_rate, (n) => pctRatio.format(n))}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 text-right text-[11px] font-medium tabular-nums text-[#1f2937]">
+                      {fmtMaybe(row.lift, (n) => pctRatio.format(n))}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 text-right text-[11px] font-medium tabular-nums text-[#1f2937]">
+                      {fmtMaybe(row.incremental_revenue, (n) =>
+                        compactCurrencyShort.format(n),
+                      )}
+                    </TableCell>
+                    <TableCell className="px-4 py-2">
+                      <StatusBadge
+                        status={{
+                          label: row.status,
+                          color: operationStatusColor(row.status),
+                        }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!activationOps.length ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="px-4 py-4 text-center text-[11px] text-[#9ca3af]"
+                    >
+                      No activation runs in this cycle.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </CardPanel>
+
+          {/* Retraining signal callout */}
+          <CardPanel>
+            <PanelHeader
+              eyebrow="Feedback loop"
+              title={retrainingSignal.title}
+              action={
+                <StatusBadge
+                  status={{
+                    label: retrainingSignal.status_label,
+                    color: retrainingSignal.eligible ? "#59a14f" : "#6b7280",
+                  }}
+                />
+              }
+            />
+            <p className="px-4 py-3 text-[12px] leading-5 text-[#1f2937]">
+              {retrainingSignal.copy}
+            </p>
           </CardPanel>
         </section>
 
